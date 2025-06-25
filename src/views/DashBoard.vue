@@ -10,32 +10,56 @@
         <button class="import" @click="importDoc()"><i class="ri-import-line"></i>&nbsp;导入文档</button>
         <input type="file" ref="fileInput" accept=".docx" @change="handleFileChange" style="display: none;">
       </div>
-      <el-divider class="divider-title">功能区</el-divider>
-      <!-- 左侧导航链接 -->
+
+      <el-divider class="divider-title">知识库</el-divider>
+
+      <!-- 知识库目录树 -->
+      <div class="knowledge-tree">
+        <h4><i class="ri-folder-tree-line"></i>&nbsp;目录树</h4>
+        <el-tree :data="knowledgeData" :props="defaultProps" @node-click="handleNodeClick" :default-expand-all="true"
+          :highlight-current="true">
+        </el-tree>
+      </div>
+
+      <!-- 最近访问列表 -->
+      <div class="recent-access">
+        <h4><i class="ri-time-line"></i>&nbsp;最近访问</h4>
+        <ul class="recent-list" v-if="displayedRecentDocs.length > 0">
+          <li v-for="(doc, index) in displayedRecentDocs" :key="index" @click="openDocument(doc.id)">
+            <i class="ri-file-text-line"></i>&nbsp;{{ doc.title }}
+            <span class="access-time">{{ doc.accessTime }}</span>
+          </li>
+          <li v-if="recentAccessDocs.length > 3 && !showAllRecent" class="show-more" @click.stop="toggleShowAllRecent">
+            <i class="ri-more-line"></i>&nbsp;查看更多
+          </li>
+          <li v-if="showAllRecent && recentAccessDocs.length > 3" class="show-more" @click.stop="toggleShowAllRecent">
+            <i class="ri-arrow-up-s-line"></i>&nbsp;收起
+          </li>
+        </ul>
+        <div v-else class="empty-recent">
+          <span>暂无最近访问记录</span>
+        </div>
+      </div>
+
+      <!-- 主要功能链接 -->
       <div class="router-link">
+        <router-link to="/dashboard/KnowledgeBasePage" class="link">
+          &nbsp;&nbsp;&nbsp;
+          <i class="ri-book-2-line"></i>
+          &nbsp;&nbsp;
+          全部知识库
+        </router-link>
         <router-link to="/dashboard/DocumentPage" class="link">
           &nbsp;&nbsp;&nbsp;
-          <i class="ri-folder-2-line"></i>
+          <i class="ri-file-list-line"></i>
           &nbsp;&nbsp;
-          我的文档
-        </router-link>
-        <router-link to="/dashboard/MyTemplate" class="link">
-          &nbsp;&nbsp;&nbsp;
-          <i class="ri-folder-open-line"></i>
-          &nbsp;&nbsp;
-          我的模板
+          全部文档
         </router-link>
         <router-link to="/dashboard/StarPage" class="link">
           &nbsp;&nbsp;&nbsp;
           <i class="ri-star-line"></i>
           &nbsp;&nbsp;
           我的收藏
-        </router-link>
-        <router-link to="/dashboard/TemplateRepo" class="link">
-          &nbsp;&nbsp;&nbsp;
-          <i class="ri-folder-cloud-line"></i>
-          &nbsp;&nbsp;
-          模板库
         </router-link>
         <router-link to="/dashboard/RecyclePage" class="link">
           &nbsp;&nbsp;&nbsp;
@@ -104,9 +128,10 @@
 </template>
 
 <script setup>
-import { ref } from "vue";
+import { ref, computed, watch, onMounted } from "vue";
 import router from "../router";
 import { useUserStore } from "../stores/userStore.js";
+import { useKnowledgeBaseStore } from "../stores/knowledgeBaseStore.js";
 import ResetPassword from "../components/ResetPassword.vue";
 import request from "../utils/request.js";
 import { ElMessage, ElLoading, ElMessageBox } from "element-plus";
@@ -114,6 +139,7 @@ import mammoth from 'mammoth';
 import axios from 'axios';
 
 const userStore = useUserStore();
+const knowledgeBaseStore = useKnowledgeBaseStore();
 const toggle = ref(false);  // 控制重置密码对话框的显示
 const RightsDialog = ref(false);  // 控制权益对比表格的显示
 let search = ref('');
@@ -130,6 +156,36 @@ const tableData = ref([
   { Type: '退款', super: '无理由退款', gold: '无理由退款', normal: '无理由退款' },
   { Type: '客服', super: '7*24小时', gold: '7*24小时', normal: '7*24小时' },
 ]);
+
+// 知识库数据 - 从store获取
+const knowledgeBases = computed(() => knowledgeBaseStore.getKnowledgeBases);
+const recentAccessDocs = computed(() => knowledgeBaseStore.getRecentAccessDocs);
+
+// 处理知识库数据，构建目录树
+const knowledgeData = computed(() => {
+  return [
+    {
+      label: '我的知识库',
+      children: knowledgeBases.value.map(kb => ({
+        label: kb.name,
+        id: kb.id,
+        icon: kb.icon
+      }))
+    },
+    {
+      label: '我的文档',
+      children: [
+        { label: '最近文档', id: 'recent' },
+        { label: '重要文档', id: 'important' }
+      ]
+    }
+  ];
+});
+
+const defaultProps = {
+  children: 'children',
+  label: 'label'
+};
 
 const handleCommand = (command) => {
   if (command === "logout") {
@@ -161,6 +217,8 @@ const querySearchAsync = async (queryString, cb) => {
 };
 // 点击查询结果
 const handleSelect = (item) => {
+  // 记录访问
+  knowledgeBaseStore.recordDocumentAccess(item.id, item.title);
   router.push({ name: 'edit', params: { id: item.id } });
 };
 // 新建文档
@@ -187,6 +245,9 @@ const createDoc = async () => {
     if (response && response.code == 200) {
       ElMessage.success(response.message || '新建文档成功!');
 
+      // 记录文档访问
+      knowledgeBaseStore.recordDocumentAccess(response.id, "未命名文档");
+
       // 使用router.push跳转到编辑页面
       router.push({ name: 'edit', params: { id: response.id } });
     } else {
@@ -197,6 +258,9 @@ const createDoc = async () => {
       const newDocId = 'new-doc-' + Date.now();
       console.log('使用本地生成的ID:', newDocId);
 
+      // 记录文档访问
+      knowledgeBaseStore.recordDocumentAccess(newDocId, "未命名文档");
+
       // 使用router.push跳转到编辑页面
       router.push({ name: 'edit', params: { id: newDocId } });
     }
@@ -205,6 +269,9 @@ const createDoc = async () => {
     // 如果API请求抛出异常，使用本地生成的ID作为后备方案
     const newDocId = 'new-doc-' + Date.now();
     console.log('API请求失败，使用本地生成的ID:', newDocId);
+
+    // 记录文档访问
+    knowledgeBaseStore.recordDocumentAccess(newDocId, "未命名文档");
 
     ElMessage.warning('创建文档时遇到问题，使用本地模式');
     router.push({ name: 'edit', params: { id: newDocId } });
@@ -236,6 +303,9 @@ const handleFileChange = async (event) => {
       console.log('发送导入文档请求:', documentData);
       const response = await request.post('/document', documentData);
       if (response.code == 200) {
+        // 记录文档访问
+        knowledgeBaseStore.recordDocumentAccess(response.id, documentData.title);
+
         ElMessage.success('导入文档成功!');
         router.push({ name: 'edit', params: { id: response.id } });
       } else {
@@ -270,6 +340,52 @@ const setCell = ({ row, column, rowIndex, columnIndex }) => {
     return { color: 'orange' };
   }
 };
+// 处理目录树节点点击
+const handleNodeClick = (data) => {
+  if (data.id) {
+    if (data.id.startsWith('kb')) {
+      router.push(`/dashboard/KnowledgeBasePage/${data.id}`);
+    } else if (data.id === 'recent' || data.id === 'important') {
+      router.push('/dashboard/DocumentPage');
+    } else {
+      router.push({ name: 'edit', params: { id: data.id } });
+    }
+  }
+};
+// 打开最近访问的文档
+const openDocument = (docId) => {
+  router.push({ name: 'edit', params: { id: docId } });
+};
+
+const displayedRecentDocs = ref([]);
+const showAllRecent = ref(false);
+
+const toggleShowAllRecent = (event) => {
+  // 阻止事件冒泡，避免点击"查看更多"时触发打开文档
+  if (event) {
+    event.stopPropagation();
+  }
+  showAllRecent.value = !showAllRecent.value;
+  updateDisplayedDocs();
+};
+
+const updateDisplayedDocs = () => {
+  if (showAllRecent.value) {
+    displayedRecentDocs.value = recentAccessDocs.value;
+  } else {
+    displayedRecentDocs.value = recentAccessDocs.value.slice(0, 3);
+  }
+};
+
+// 监听recentAccessDocs的变化
+watch(recentAccessDocs, () => {
+  updateDisplayedDocs();
+}, { immediate: true });
+
+// 初始化时设置显示的文档
+onMounted(() => {
+  updateDisplayedDocs();
+});
 </script>
 
 <style scoped>
@@ -423,5 +539,75 @@ const setCell = ({ row, column, rowIndex, columnIndex }) => {
 
 .main {
   padding: 0;
+}
+
+.knowledge-tree {
+  padding: 0 1rem;
+  margin-top: 1rem;
+}
+
+.knowledge-tree h4 {
+  color: #606266;
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.recent-access {
+  padding: 0 1rem;
+  margin-top: 1.5rem;
+}
+
+.recent-access h4 {
+  color: #606266;
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.recent-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.recent-list li {
+  padding: 0.5rem 0;
+  cursor: pointer;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #606266;
+  display: flex;
+  align-items: center;
+}
+
+.recent-list li:hover {
+  color: var(--el-color-primary);
+}
+
+.show-more {
+  color: var(--el-color-primary) !important;
+  text-align: center;
+  padding: 5px 0;
+  margin-top: 5px;
+  border-top: 1px dashed #ebeef5;
+  cursor: pointer;
+}
+
+.show-more:hover {
+  background-color: #f5f7fa;
+}
+
+.access-time {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: #909399;
+}
+
+.empty-recent {
+  text-align: center;
+  color: #909399;
+  font-size: 0.85rem;
+  padding: 1rem 0;
 }
 </style>

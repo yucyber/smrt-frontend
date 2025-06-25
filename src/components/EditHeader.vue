@@ -35,6 +35,7 @@
     <input type="text" :value="title" @input="updateTitle" style="background: none; border: 0px; outline: none" />
   </div>
   <div class="right-group" style="margin-right: 1vw;">
+    <KnowledgeBaseSelector :documentId="documentId" />
     <el-tooltip content="文心助手" :hide-after="0">
       <el-button @click="InsertErnie()" class="icon">
         <i style="font-size: 22px;" class="ri-baidu-fill"></i>
@@ -112,6 +113,8 @@ import request from "../utils/request.js";
 import router from "../router/index.js";
 import MindMap from '../components/MindMap.vue';
 import htmlToPDF from '../utils/htmlToPDF.js';
+import KnowledgeBaseSelector from './KnowledgeBaseSelector.vue';
+
 const ocrDialog = ref(false); // OCR弹窗
 const asrDialog = ref(false); // ASR弹窗
 const uploadSuccess = ref(false); // 上传成功
@@ -127,6 +130,7 @@ const props = defineProps({
   title: String
 });
 const emit = defineEmits(['reload', 'updateTitle']);
+const documentId = ref(router.currentRoute.value.params.id || '');
 const reload = () => {
   emit('reload');
 };
@@ -135,7 +139,7 @@ const updateTitle = (event) => {
 };
 // 返回文档页面
 const returnHome = () => {
-  router.push('/dashboard/DocumentPage');
+  router.push('/dashboard/KnowledgeBasePage');
 }
 // 新建文档
 const createDoc = async () => {

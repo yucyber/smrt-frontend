@@ -83,6 +83,7 @@ import FixedMenu from '../components/FixedMenu.vue';
 import BubbleMenu from '../components/BubbleMenu.vue';
 import request from "../utils/request.js";
 import router from "../router";
+import { useKnowledgeBaseStore } from "../stores/knowledgeBaseStore.js";
 import NProgress from 'nprogress';
 import 'nprogress/nprogress.css';
 import { useEditor, EditorContent } from '@tiptap/vue-3'
@@ -125,6 +126,7 @@ const documents = ref([]);
 const catalog = ref(false);
 const profession = ref('学生');
 const typography = ref(false);
+const knowledgeBaseStore = useKnowledgeBaseStore();
 
 // 创建编辑器实例
 const editor = useEditor({
@@ -225,6 +227,9 @@ const loadDocuments = async () => {
         updated_at: new Date().toISOString()
       });
 
+      // 记录文档访问
+      knowledgeBaseStore.recordDocumentAccess(currentDocId, "未命名文档");
+
       NProgress.done();
       return;
     }
@@ -244,6 +249,9 @@ const loadDocuments = async () => {
         ElMessage.info("只读模式");
       }
       title.value = response.document.title;
+
+      // 记录文档访问
+      knowledgeBaseStore.recordDocumentAccess(currentDocId, response.document.title);
     } else {
       console.error('获取文档内容失败:', response?.message);
       // 设置默认内容
@@ -263,6 +271,11 @@ const loadDocuments = async () => {
 };
 // 处理文档点击
 const handleDocClick = (id) => {
+  // 获取点击的文档标题
+  const doc = documents.value.find(doc => doc.id === id);
+  if (doc) {
+    knowledgeBaseStore.recordDocumentAccess(id, doc.title);
+  }
   router.push({ name: 'edit', params: { id: id } });
   loadDocuments();
 };
