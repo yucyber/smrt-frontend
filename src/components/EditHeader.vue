@@ -35,12 +35,36 @@
         style="background: none; border: 0px; outline: none"
       />
     </div>
+    <div class="right-group">
+      <!-- 协同编辑用户头像 -->
+      <div class="collaboration-users">
+        <el-tooltip
+          v-for="user in collaborationUsers"
+          :key="user.clientId"
+          :content="user.name || '匿名用户'"
+          :hide-after="0"
+        >
+          <div 
+            class="user-avatar"
+            :style="{ backgroundColor: user.color || '#f783ac' }"
+          >
+            {{ getUserInitial(user.name) }}
+          </div>
+        </el-tooltip>
+        <div v-if="collaborationUsers.length === 0" class="no-users">
+          <el-icon :size="16" color="#999">
+            <User />
+          </el-icon>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, watch } from "vue";
+import { ref, watch, onMounted, onBeforeUnmount } from "vue";
 import { ElMessage, ElLoading } from "element-plus";
+import { User } from "@element-plus/icons-vue";
 import request from "../utils/request.js";
 import router from "../router/index.js";
 import htmlToPDF from "../utils/htmlToPDF.js";
@@ -51,6 +75,91 @@ const props = defineProps({
   title: String,
 });
 const emit = defineEmits(["reload", "updateTitle"]);
+
+// 协同编辑用户状态
+const collaborationUsers = ref([]);
+let awarenessChangeHandler = null;
+
+// 获取用户名首字母
+const getUserInitial = (name) => {
+  if (!name || name === '匿名用户') return '?';
+  return name.charAt(0).toUpperCase();
+};
+
+// 更新协同编辑用户列表
+const updateCollaborationUsers = () => {
+  if (!props.editor) return;
+  
+  // 获取 WebSocket provider (从 EditView.vue 传递的 editor 中获取)
+  const extensions = props.editor.extensionManager.extensions;
+  const collaborationCursor = extensions.find(ext => ext.name === 'collaborationCursor');
+  
+  if (collaborationCursor && collaborationCursor.options.provider) {
+    const provider = collaborationCursor.options.provider;
+    const awarenessStates = provider.awareness.getStates();
+    const currentClientId = provider.awareness.clientID;
+    
+    // 使用Map来去重，基于用户名进行去重
+    const userMap = new Map();
+    
+    awarenessStates.forEach((state, clientId) => {
+      if (clientId !== currentClientId && state.user && state.user.name) {
+        const userName = state.user.name;
+        // 如果用户名已存在，保留最新的状态（后面的会覆盖前面的）
+        userMap.set(userName, {
+          clientId,
+          name: state.user.name,
+          color: state.user.color
+        });
+      }
+    });
+    
+    // 将Map转换为数组
+    collaborationUsers.value = Array.from(userMap.values());
+  }
+};
+
+// 监听 editor 变化，设置 awareness 监听器
+watch(() => props.editor, (newEditor) => {
+  if (newEditor) {
+    // 清除之前的监听器
+    if (awarenessChangeHandler) {
+      const extensions = newEditor.extensionManager.extensions;
+      const collaborationCursor = extensions.find(ext => ext.name === 'collaborationCursor');
+      if (collaborationCursor && collaborationCursor.options.provider) {
+        collaborationCursor.options.provider.awareness.off('change', awarenessChangeHandler);
+      }
+    }
+    
+    // 设置新的监听器
+    const extensions = newEditor.extensionManager.extensions;
+    const collaborationCursor = extensions.find(ext => ext.name === 'collaborationCursor');
+    
+    if (collaborationCursor && collaborationCursor.options.provider) {
+      const provider = collaborationCursor.options.provider;
+      
+      awarenessChangeHandler = () => {
+        updateCollaborationUsers();
+      };
+      
+      provider.awareness.on('change', awarenessChangeHandler);
+      
+      // 初始化用户列表
+      updateCollaborationUsers();
+    }
+  }
+}, { immediate: true });
+
+// 组件卸载时清理监听器
+onBeforeUnmount(() => {
+  if (awarenessChangeHandler && props.editor) {
+    const extensions = props.editor.extensionManager.extensions;
+    const collaborationCursor = extensions.find(ext => ext.name === 'collaborationCursor');
+    if (collaborationCursor && collaborationCursor.options.provider) {
+      collaborationCursor.options.provider.awareness.off('change', awarenessChangeHandler);
+    }
+  }
+});
 
 // 在创建或保存成功后，触发 reload 事件，通知父组件刷新左侧的文档列表。
 const reload = () => {
@@ -143,6 +252,72 @@ const download = (fileName) => {
   width: 100%;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   padding: 10px 20px;
+}
+
+.left-group {
+  display: flex;
+  align-items: center;
+}
+
+.right-group {
+  display: flex;
+  align-items: center;
+}
+
+.collaboration-users {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 20px;
+}
+
+.user-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 2px solid white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.user-avatar:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.no-users {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background-color: #f5f5f5;
+  border: 2px solid #e0e0e0;
+}
+
+/* 协同编辑用户头像动画 */
+.collaboration-users .user-avatar {
+  animation: fadeInScale 0.3s ease-out;
+}
+
+@keyframes fadeInScale {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 </style>
