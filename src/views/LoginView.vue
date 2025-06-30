@@ -127,7 +127,7 @@ const login = async () => {
 
         // 提示成功并跳转
         ElMessage.success('登录成功');
-        router.push('/dashboard/DocumentPage');
+        router.push('/dashboard/KnowledgeBasePage');
         loadingInstance.close();
         return;
       } else {
@@ -159,7 +159,7 @@ const login = async () => {
 
       // 提示成功并跳转
       ElMessage.success('登录成功');
-      router.push('/dashboard/DocumentPage');
+      router.push('/dashboard/KnowledgeBasePage');
     } else {
       ElMessage.error(response?.message || '登录失败，请检查用户名和密码');
     }
@@ -230,12 +230,12 @@ const devLogin = () => {
 
         // 更新pinia store
         userStore.setToken(data.data.access_token);
-        userStore.setUsername(data.data.username);
-        userStore.setEmail('test@example.com');
+        userStore.setUsername('开发测试用户');
+        userStore.setEmail('dev@example.com');
 
         // 提示成功并跳转
         ElMessage.success('开发模式登录成功');
-        router.push('/dashboard/DocumentPage');
+        router.push('/dashboard/KnowledgeBasePage');
       } else {
         // 登录失败
         ElMessage.error(data?.message || '开发模式登录失败，请检查后端服务');
