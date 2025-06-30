@@ -130,6 +130,7 @@
 <script setup>
 import { ref, computed, watch, onMounted } from "vue";
 import router from "../router";
+import { useRoute } from "vue-router";
 import { useUserStore } from "../stores/userStore.js";
 import { useKnowledgeBaseStore } from "../stores/knowledgeBaseStore.js";
 import ResetPassword from "../components/ResetPassword.vue";
@@ -140,6 +141,7 @@ import axios from 'axios';
 
 const userStore = useUserStore();
 const knowledgeBaseStore = useKnowledgeBaseStore();
+const route = useRoute(); // 获取当前路由
 const toggle = ref(false);  // 控制重置密码对话框的显示
 const RightsDialog = ref(false);  // 控制权益对比表格的显示
 let search = ref('');
@@ -215,10 +217,29 @@ const querySearchAsync = async (queryString, cb) => {
     ElMessage.error(error);
   }
 };
+// 安全地记录文档访问的辅助函数
+const safeRecordAccess = (docId, title) => {
+  try {
+    if (typeof knowledgeBaseStore.recordDocumentAccess === 'function') {
+      console.log(`安全记录文档访问: ID=${docId}, 标题=${title}`);
+      return knowledgeBaseStore.recordDocumentAccess(docId, title)
+        .catch(err => {
+          console.error('记录文档访问失败:', err);
+          return Promise.resolve(false);
+        });
+    } else {
+      console.error('recordDocumentAccess方法不存在');
+      return Promise.resolve(false);
+    }
+  } catch (error) {
+    console.error('记录文档访问出错:', error);
+    return Promise.resolve(false);
+  }
+};
 // 点击查询结果
 const handleSelect = (item) => {
   // 记录访问
-  knowledgeBaseStore.recordDocumentAccess(item.id, item.title);
+  safeRecordAccess(item.id, item.title);
   router.push({ name: 'edit', params: { id: item.id } });
 };
 // 新建文档
@@ -246,7 +267,7 @@ const createDoc = async () => {
       ElMessage.success(response.message || '新建文档成功!');
 
       // 记录文档访问
-      knowledgeBaseStore.recordDocumentAccess(response.id, "未命名文档");
+      safeRecordAccess(response.id, "未命名文档");
 
       // 使用router.push跳转到编辑页面
       router.push({ name: 'edit', params: { id: response.id } });
@@ -259,7 +280,7 @@ const createDoc = async () => {
       console.log('使用本地生成的ID:', newDocId);
 
       // 记录文档访问
-      knowledgeBaseStore.recordDocumentAccess(newDocId, "未命名文档");
+      safeRecordAccess(newDocId, "未命名文档");
 
       // 使用router.push跳转到编辑页面
       router.push({ name: 'edit', params: { id: newDocId } });
@@ -271,7 +292,7 @@ const createDoc = async () => {
     console.log('API请求失败，使用本地生成的ID:', newDocId);
 
     // 记录文档访问
-    knowledgeBaseStore.recordDocumentAccess(newDocId, "未命名文档");
+    safeRecordAccess(newDocId, "未命名文档");
 
     ElMessage.warning('创建文档时遇到问题，使用本地模式');
     router.push({ name: 'edit', params: { id: newDocId } });
@@ -304,7 +325,7 @@ const handleFileChange = async (event) => {
       const response = await request.post('/document', documentData);
       if (response.code == 200) {
         // 记录文档访问
-        knowledgeBaseStore.recordDocumentAccess(response.id, documentData.title);
+        safeRecordAccess(response.id, documentData.title);
 
         ElMessage.success('导入文档成功!');
         router.push({ name: 'edit', params: { id: response.id } });
@@ -342,18 +363,34 @@ const setCell = ({ row, column, rowIndex, columnIndex }) => {
 };
 // 处理目录树节点点击
 const handleNodeClick = (data) => {
+  console.log('点击节点数据:', data);
+
   if (data.id) {
-    if (data.id.startsWith('kb')) {
-      router.push(`/dashboard/KnowledgeBasePage/${data.id}`);
-    } else if (data.id === 'recent' || data.id === 'important') {
+    // 将ID转为字符串，确保可以调用startsWith方法
+    const idStr = String(data.id);
+
+    // 检查是否是知识库项
+    if (data.id && knowledgeBases.value.some(kb => String(kb.id) === idStr)) {
+      console.log('点击了知识库:', idStr);
+      router.push(`/dashboard/KnowledgeBasePage/${idStr}`);
+    } else if (idStr === 'recent' || idStr === 'important') {
+      console.log('点击了文档分类:', idStr);
       router.push('/dashboard/DocumentPage');
     } else {
-      router.push({ name: 'edit', params: { id: data.id } });
+      console.log('点击了文档:', idStr);
+      router.push({ name: 'edit', params: { id: idStr } });
     }
   }
 };
 // 打开最近访问的文档
 const openDocument = (docId) => {
+  // 我们可以选择在打开最近文档时也记录访问
+  // 这里不是必须的，因为用户已经访问过这个文档了
+  // 但记录一次可以更新访问时间
+  const doc = recentAccessDocs.value.find(d => d.id === docId);
+  if (doc) {
+    safeRecordAccess(docId, doc.title);
+  }
   router.push({ name: 'edit', params: { id: docId } });
 };
 
@@ -370,11 +407,22 @@ const toggleShowAllRecent = (event) => {
 };
 
 const updateDisplayedDocs = () => {
+  // 确保recentAccessDocs存在且是有效数组
+  if (!recentAccessDocs.value || !Array.isArray(recentAccessDocs.value)) {
+    console.log('最近访问文档数据无效，显示空列表');
+    displayedRecentDocs.value = [];
+    return;
+  }
+
+  console.log('更新最近访问文档显示，共有', recentAccessDocs.value.length, '条记录');
+
   if (showAllRecent.value) {
     displayedRecentDocs.value = recentAccessDocs.value;
   } else {
     displayedRecentDocs.value = recentAccessDocs.value.slice(0, 3);
   }
+
+  console.log('显示', displayedRecentDocs.value.length, '条最近访问记录');
 };
 
 // 监听recentAccessDocs的变化
@@ -383,9 +431,54 @@ watch(recentAccessDocs, () => {
 }, { immediate: true });
 
 // 初始化时设置显示的文档
-onMounted(() => {
+onMounted(async () => {
+  // 加载最近访问文档，使用强制刷新确保首次加载最新数据
+  console.log('DashBoard组件挂载，加载最近访问数据');
+  try {
+    if (typeof knowledgeBaseStore.loadRecentAccessDocs === 'function') {
+      await knowledgeBaseStore.loadRecentAccessDocs(true);
+    } else {
+      console.error('loadRecentAccessDocs方法不存在');
+      // 如果方法不存在，至少更新一下显示
+      updateDisplayedDocs();
+    }
+  } catch (error) {
+    console.error('加载最近访问数据失败:', error);
+  }
   updateDisplayedDocs();
 });
+
+// 监听路由变化，当从其他页面返回Dashboard时刷新最近访问记录
+let lastPath = '';
+watch(() => route.path, (newPath, oldPath) => {
+  console.log(`路由变化: ${oldPath || 'none'} -> ${newPath}`);
+
+  // 只有当从其他页面返回到Dashboard相关页面时才刷新
+  if (newPath.includes('/dashboard') && lastPath && !lastPath.includes('/dashboard')) {
+    console.log('从其他页面返回Dashboard，刷新最近访问数据');
+
+    try {
+      if (typeof knowledgeBaseStore.loadRecentAccessDocs === 'function') {
+        knowledgeBaseStore.loadRecentAccessDocs(true).then(() => {
+          console.log('最近访问数据已更新');
+          updateDisplayedDocs();
+        }).catch(err => {
+          console.error('刷新最近访问数据失败:', err);
+          updateDisplayedDocs(); // 即使失败也尝试更新显示
+        });
+      } else {
+        console.error('loadRecentAccessDocs方法不存在');
+        updateDisplayedDocs();
+      }
+    } catch (error) {
+      console.error('刷新最近访问数据失败:', error);
+      updateDisplayedDocs();
+    }
+  }
+
+  // 记录上一个路径，用于判断是否是从其他页面返回
+  lastPath = newPath;
+}, { immediate: true });
 </script>
 
 <style scoped>

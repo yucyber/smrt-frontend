@@ -16,14 +16,14 @@
                 <el-col :span="8" v-for="kb in knowledgeBases" :key="kb.id">
                     <el-card class="kb-card" @click="openKnowledgeBase(kb.id)">
                         <div class="kb-icon">
-                            <i :class="kb.icon"></i>
+                            <i :class="kb.icon || 'ri-book-2-line'"></i>
                         </div>
                         <div class="kb-info">
                             <h3>{{ kb.name }}</h3>
-                            <p>{{ kb.description }}</p>
+                            <p>{{ kb.description || '无描述' }}</p>
                             <div class="kb-meta">
-                                <span>{{ kb.docCount }}个文档</span>
-                                <span>{{ kb.lastUpdated }}</span>
+                                <span>{{ getDocumentCount(kb.id) }}个文档</span>
+                                <span>{{ formatDate(kb.updated_at) }}</span>
                             </div>
                         </div>
                     </el-card>
@@ -56,7 +56,7 @@
                                 <el-button link type="primary" size="small"
                                     @click="editDocument(scope.row.id)">编辑</el-button>
                                 <el-button link type="danger" size="small"
-                                    @click="removeDocument(scope.row.id)">移除</el-button>
+                                    @click="removeDocumentFromKnowledgeBase(scope.row.id)">移除</el-button>
                             </template>
                         </el-table-column>
                     </el-table>
@@ -160,7 +160,11 @@ import request from '../utils/request';
 // 路由相关
 const route = useRoute();
 const router = useRouter();
-const knowledgeBaseId = computed(() => route.params.id);
+const knowledgeBaseId = computed(() => {
+    const id = route.params.id;
+    console.log('当前路由参数ID:', id, typeof id);
+    return id;
+});
 
 // Store
 const knowledgeBaseStore = useKnowledgeBaseStore();
@@ -169,6 +173,9 @@ const knowledgeBaseStore = useKnowledgeBaseStore();
 const showAddDocDialog = ref(false);
 const showDeleteConfirmDialog = ref(false);
 const showCreateDialog = ref(false);
+
+// 获取文档数量 - 带缓存的实现，确保视图刷新时数据一致性
+const documentCountCache = ref({});
 
 // 表单数据
 const knowledgeBaseForm = ref({
@@ -191,28 +198,104 @@ const currentKnowledgeBase = ref({});
 const documents = ref([]);
 const allDocuments = ref([]);
 const selectedDocuments = ref([]);
+const loading = ref(false);
 
 // 过滤后的文档列表（用于对话框）
 const filteredDocumentsForDialog = computed(() => {
     if (!knowledgeBaseId.value) return [];
 
-    // 获取当前知识库已有的文档ID列表
-    const existingDocIds = knowledgeBaseStore.getDocumentsInKnowledgeBase(knowledgeBaseId.value);
+    console.log('所有文档:', allDocuments.value);
 
-    // 过滤出尚未添加到当前知识库的文档
-    return allDocuments.value.filter(doc => !existingDocIds.includes(doc.id));
+    // 过滤出未添加到任何知识库的文档
+    return allDocuments.value.filter(doc => {
+        // 使用store中的方法检查文档是否已在任何知识库中
+        return !knowledgeBaseStore.isDocumentInAnyKnowledgeBase(doc.id);
+    });
+});
+
+// 初始化
+onMounted(async () => {
+    loading.value = true;
+    try {
+        console.log('开始初始化KnowledgeBasePage');
+
+        // 加载知识库数据
+        await knowledgeBaseStore.loadAllData();
+        console.log('已加载知识库数据');
+
+        // 确保所有知识库的文档关联都已加载
+        const kbIds = knowledgeBaseStore.getKnowledgeBases.map(kb => kb.id);
+        for (const kbId of kbIds) {
+            await knowledgeBaseStore.refreshDocumentAssociations(kbId);
+        }
+        console.log('已刷新所有知识库的文档关联');
+
+        // 加载所有文档
+        await loadAllDocuments();
+        console.log('已加载所有文档');
+
+        // 如果有特定的知识库ID，加载该知识库的详情
+        if (knowledgeBaseId.value) {
+            console.log('加载知识库详情:', knowledgeBaseId.value);
+            await loadKnowledgeBaseDetails(knowledgeBaseId.value);
+        }
+
+        console.log('初始化完成');
+    } catch (error) {
+        console.error('初始化失败:', error);
+        ElMessage.error('加载数据失败，请稍后重试');
+    } finally {
+        loading.value = false;
+    }
 });
 
 // 监听路由参数变化
-watch(() => route.params.id, async (newId) => {
+watch(() => route.params.id, async (newId, oldId) => {
+    console.log('路由参数变化:', oldId, '->', newId);
+
+    // 安全地清除文档计数缓存
+    if (documentCountCache && documentCountCache.value) {
+        documentCountCache.value = {};
+    }
+
     if (newId) {
+        console.log('开始加载知识库详情:', newId);
         await loadKnowledgeBaseDetails(newId);
+    } else {
+        console.log('无ID参数，显示知识库列表');
     }
 }, { immediate: true });
 
+// 监听知识库数据变化，更新缓存
+watch(() => knowledgeBases.value, () => {
+    console.log('知识库数据变化，清除文档计数缓存');
+    // 安全地清除文档计数缓存
+    if (documentCountCache && documentCountCache.value) {
+        documentCountCache.value = {};
+    }
+}, { deep: true });
+
 // 打开知识库
 const openKnowledgeBase = (id) => {
-    router.push(`/dashboard/KnowledgeBasePage/${id}`);
+    console.log('点击打开知识库:', id);
+    try {
+        // 确保知识库存在
+        const kb = knowledgeBaseStore.getKnowledgeBaseById(id);
+        if (kb) {
+            console.log('找到知识库:', kb);
+            // 使用命名路由导航
+            router.push({
+                name: 'knowledgeBaseDetail',
+                params: { id: id }
+            });
+        } else {
+            console.error('未找到知识库:', id);
+            ElMessage.error('未找到该知识库');
+        }
+    } catch (error) {
+        console.error('打开知识库时出错:', error);
+        ElMessage.error('打开知识库时出错');
+    }
 };
 
 // 编辑文档
@@ -220,7 +303,26 @@ const editDocument = (id) => {
     // 记录访问
     const doc = documents.value.find(doc => doc.id === id);
     if (doc) {
-        knowledgeBaseStore.recordDocumentAccess(id, doc.title);
+        console.log('记录文档访问:', id, doc.title);
+        try {
+            // 直接通过API记录文档访问，不依赖store方法
+            request({
+                url: '/knowledge_base/user/document-access',
+                method: 'post',
+                data: {
+                    document_id: id,
+                    title: doc.title
+                }
+            }).then(() => {
+                console.log('文档访问记录成功');
+                // 刷新最近访问数据
+                knowledgeBaseStore.loadRecentAccessDocs();
+            }).catch(error => {
+                console.error('文档访问记录失败:', error);
+            });
+        } catch (error) {
+            console.error('记录文档访问异常:', error);
+        }
     }
     router.push({ name: 'edit', params: { id } });
 };
@@ -230,80 +332,207 @@ const handleSelectionChange = (val) => {
     selectedDocuments.value = val;
 };
 
+// 加载所有文档
+const loadAllDocuments = async () => {
+    try {
+        console.log('开始加载所有文档');
+        const response = await request({
+            url: '/document/list',
+            method: 'get'
+        });
+
+        console.log('文档列表响应:', response);
+
+        if (response && response.code === '200') {  // 注意这里是字符串'200'而不是数字200
+            // 后端返回的数据格式是 {'documents': [...], 'code': '200'}
+            if (Array.isArray(response.documents)) {
+                allDocuments.value = response.documents;
+                console.log('成功加载文档列表:', allDocuments.value.length, '个文档');
+            }
+            else {
+                console.error('未知的文档列表格式:', response);
+                allDocuments.value = [];
+            }
+
+            // 确保每个文档对象都有必要的属性
+            allDocuments.value = allDocuments.value.map(doc => {
+                // 提取标题，如果没有标题则使用内容的前20个字符
+                const title = doc.title || (doc.content ? doc.content.replace(/<[^>]*>/g, '').substring(0, 20) + '...' : '未命名文档');
+                return {
+                    ...doc,
+                    title: title,
+                    updateTime: doc.updated_at || doc.updateTime || new Date().toLocaleString()
+                };
+            });
+
+            console.log('处理后的文档列表:', allDocuments.value);
+        } else {
+            console.error('获取文档列表失败:', response);
+            // 使用空数组作为默认值
+            allDocuments.value = [];
+        }
+    } catch (error) {
+        console.error('获取文档异常:', error);
+        // 使用空数组作为默认值
+        allDocuments.value = [];
+    }
+};
+
+// 打开添加文档对话框
+const openAddDocDialog = () => {
+    showAddDocDialog.value = true;
+};
+
 // 添加文档到知识库
-const addDocumentsToKnowledgeBase = () => {
-    if (selectedDocuments.value.length === 0) {
-        ElMessage.warning('请至少选择一个文档');
+const addDocumentsToKnowledgeBase = async () => {
+    if (!selectedDocuments.value || selectedDocuments.value.length === 0) {
+        ElMessage.warning('请选择要添加的文档');
         return;
     }
 
-    // 获取当前知识库已有的文档ID列表
-    const existingDocIds = knowledgeBaseStore.getDocumentsInKnowledgeBase(knowledgeBaseId.value);
+    console.log('选中的文档:', selectedDocuments.value);
 
-    // 过滤出尚未添加到当前知识库的文档
-    const newDocIds = selectedDocuments.value
-        .map(doc => doc.id)
-        .filter(id => !existingDocIds.includes(id));
+    loading.value = true;
+    try {
+        // 提取文档ID
+        const docIds = selectedDocuments.value.map(doc => doc.id);
+        console.log('要添加的文档IDs:', docIds);
 
-    if (newDocIds.length === 0) {
-        ElMessage.info('所选文档都已经在此知识库中');
+        let allSuccess = true;
+        for (const docId of docIds) {
+            const success = await knowledgeBaseStore.addDocumentToKnowledgeBase(knowledgeBaseId.value, docId);
+            if (!success) {
+                console.error(`添加文档 ${docId} 失败`);
+                allSuccess = false;
+            }
+        }
+
+        // 重新加载文档
+        await loadDocumentsForKnowledgeBase();
+
+        // 刷新知识库文档关联
+        await knowledgeBaseStore.refreshDocumentAssociations(knowledgeBaseId.value);
+
+        // 重新加载所有文档关联以确保UI一致性
+        await knowledgeBaseStore.loadAllData();
+
+        // 安全地清除文档计数缓存
+        if (documentCountCache && documentCountCache.value) {
+            documentCountCache.value = {};
+        }
+
         showAddDocDialog.value = false;
-        return;
+
+        if (allSuccess) {
+            ElMessage.success('文档已添加到知识库');
+        } else {
+            ElMessage.warning('部分文档添加失败，请查看控制台日志');
+        }
+    } catch (error) {
+        console.error('添加文档失败:', error);
+        ElMessage.error('添加文档失败，请稍后重试');
+    } finally {
+        loading.value = false;
     }
-
-    // 添加新文档到知识库
-    knowledgeBaseStore.addDocumentsToKnowledgeBase(knowledgeBaseId.value, newDocIds);
-
-    // 更新当前文档列表
-    loadDocumentsForKnowledgeBase();
-    showAddDocDialog.value = false;
-
-    ElMessage.success(`成功添加${newDocIds.length}个文档到知识库`);
 };
 
 // 从知识库移除文档
-const removeDocument = (docId) => {
-    ElMessageBox.confirm(
-        '确定要从此知识库中移除该文档吗？',
-        '提示',
-        {
-            confirmButtonText: '确定',
-            cancelButtonText: '取消',
-            type: 'warning',
+const removeDocumentFromKnowledgeBase = async (docId) => {
+    try {
+        loading.value = true;
+        console.log(`尝试从知识库 ${knowledgeBaseId.value} 中移除文档 ${docId}`);
+
+        // 调用store中的方法移除文档
+        const success = await knowledgeBaseStore.removeDocumentFromKnowledgeBase(knowledgeBaseId.value, docId);
+
+        if (success) {
+            // 重新加载文档
+            await loadDocumentsForKnowledgeBase();
+
+            // 刷新知识库文档关联
+            await knowledgeBaseStore.refreshDocumentAssociations(knowledgeBaseId.value);
+
+            // 安全地清除文档计数缓存
+            if (documentCountCache && documentCountCache.value) {
+                documentCountCache.value = {};
+            }
+
+            ElMessage.success('已从知识库移除文档');
+        } else {
+            ElMessage.error('移除文档失败');
         }
-    ).then(() => {
-        knowledgeBaseStore.removeDocumentFromKnowledgeBase(knowledgeBaseId.value, docId);
-        loadDocumentsForKnowledgeBase(); // 重新加载文档列表
-        ElMessage.success('文档已从知识库移除');
-    }).catch(() => {
-        // 取消操作
-    });
+    } catch (error) {
+        console.error('移除文档失败:', error);
+        ElMessage.error('移除文档失败，请稍后重试');
+    } finally {
+        loading.value = false;
+    }
 };
 
 // 保存知识库设置
-const saveKnowledgeBase = () => {
+const saveKnowledgeBase = async () => {
     if (!knowledgeBaseForm.value.name) {
         ElMessage.warning('知识库名称不能为空');
         return;
     }
 
-    knowledgeBaseStore.updateKnowledgeBase(knowledgeBaseId.value, knowledgeBaseForm.value);
-    currentKnowledgeBase.value = knowledgeBaseStore.getKnowledgeBaseById(knowledgeBaseId.value);
-    ElMessage.success('知识库设置已更新');
+    loading.value = true;
+    try {
+        const success = await knowledgeBaseStore.updateKnowledgeBase(
+            knowledgeBaseId.value,
+            knowledgeBaseForm.value
+        );
+
+        if (success) {
+            // 更新当前知识库显示
+            currentKnowledgeBase.value = knowledgeBaseStore.getKnowledgeBaseById(knowledgeBaseId.value);
+            ElMessage.success('知识库设置已更新');
+        } else {
+            ElMessage.error('更新知识库失败');
+        }
+    } catch (error) {
+        console.error('保存知识库设置失败:', error);
+        ElMessage.error('保存知识库设置失败，请稍后重试');
+    } finally {
+        loading.value = false;
+    }
 };
 
 // 确认删除知识库
 const confirmDeleteKnowledgeBase = () => {
-    showDeleteConfirmDialog.value = true;
+    ElMessageBox.confirm(
+        '确定要删除该知识库吗？此操作无法撤销。',
+        '删除确认',
+        {
+            confirmButtonText: '确定删除',
+            cancelButtonText: '取消',
+            type: 'warning'
+        }
+    ).then(async () => {
+        await deleteKnowledgeBase();
+    }).catch(() => {
+        // 用户取消删除
+    });
 };
 
 // 删除知识库
-const deleteKnowledgeBase = () => {
-    knowledgeBaseStore.deleteKnowledgeBase(knowledgeBaseId.value);
-    showDeleteConfirmDialog.value = false;
+const deleteKnowledgeBase = async () => {
+    loading.value = true;
+    try {
+        const success = await knowledgeBaseStore.deleteKnowledgeBase(knowledgeBaseId.value);
 
-    ElMessage.success('知识库已删除');
-    router.push('/dashboard/KnowledgeBasePage');
+        if (success) {
+            ElMessage.success('知识库已删除');
+            router.push('/dashboard/KnowledgeBasePage');
+        } else {
+            ElMessage.error('删除知识库失败');
+        }
+    } catch (error) {
+        console.error('删除知识库失败:', error);
+        ElMessage.error('删除知识库失败，请稍后重试');
+    } finally {
+        loading.value = false;
+    }
 };
 
 // 创建知识库
@@ -317,235 +546,168 @@ const createKnowledgeBase = () => {
 };
 
 // 提交创建知识库
-const submitCreateKnowledgeBase = () => {
+const submitCreateKnowledgeBase = async () => {
     if (!createForm.value.name) {
         ElMessage.warning('知识库名称不能为空');
         return;
     }
 
-    const newId = knowledgeBaseStore.createKnowledgeBase(createForm.value);
-    showCreateDialog.value = false;
+    loading.value = true;
+    try {
+        console.log('提交创建知识库:', createForm.value);
+        const result = await knowledgeBaseStore.createKnowledgeBase(createForm.value);
 
-    ElMessage.success('知识库创建成功');
-    router.push(`/dashboard/KnowledgeBasePage/${newId}`);
+        if (result) {
+            showCreateDialog.value = false;
+            ElMessage.success('知识库创建成功');
+
+            // 如果返回的是ID，则导航到该知识库
+            if (typeof result === 'number' || typeof result === 'string') {
+                router.push(`/dashboard/KnowledgeBasePage/${result}`);
+            } else {
+                // 否则刷新页面
+                router.push('/dashboard/KnowledgeBasePage');
+            }
+        } else {
+            ElMessage.error('创建知识库失败');
+        }
+    } catch (error) {
+        console.error('创建知识库失败:', error);
+        ElMessage.error('创建知识库失败，请稍后重试');
+    } finally {
+        loading.value = false;
+    }
 };
 
 // 加载知识库详情
 const loadKnowledgeBaseDetails = async (id) => {
-    const kb = knowledgeBaseStore.getKnowledgeBaseById(id);
-    if (kb) {
-        currentKnowledgeBase.value = kb;
-        knowledgeBaseForm.value = {
-            name: kb.name,
-            description: kb.description,
-            icon: kb.icon
-        };
+    console.log('执行loadKnowledgeBaseDetails:', id);
+    loading.value = true;
+    try {
+        // 确保知识库数据已加载
+        if (knowledgeBases.value.length === 0) {
+            console.log('知识库列表为空，重新加载数据');
+            await knowledgeBaseStore.loadAllData();
+        }
 
-        // 加载该知识库中的文档
-        loadDocumentsForKnowledgeBase();
+        const kb = knowledgeBaseStore.getKnowledgeBaseById(id);
+        console.log('获取到知识库:', kb);
+
+        if (kb) {
+            currentKnowledgeBase.value = kb;
+            knowledgeBaseForm.value = {
+                name: kb.name,
+                description: kb.description || '',
+                icon: kb.icon || 'ri-book-2-line'
+            };
+
+            // 加载该知识库中的文档
+            await loadDocumentsForKnowledgeBase();
+        } else {
+            console.error('知识库不存在:', id);
+            ElMessage.error('知识库不存在或已被删除');
+            router.push({
+                name: 'knowledgeBaseList'
+            });
+        }
+    } catch (error) {
+        console.error('加载知识库详情失败:', error);
+        ElMessage.error('加载知识库详情失败，请稍后重试');
+    } finally {
+        loading.value = false;
     }
 };
 
 // 加载知识库中的文档
 const loadDocumentsForKnowledgeBase = async () => {
+    loading.value = true;
     try {
-        const docIds = knowledgeBaseStore.getDocumentsInKnowledgeBase(knowledgeBaseId.value);
-        documents.value = []; // 清空现有数据
+        console.log('开始加载知识库文档, 知识库ID:', knowledgeBaseId.value);
 
-        if (docIds.length === 0) {
-            return; // 如果没有关联文档，直接返回空列表
+        // 直接从API获取文档列表
+        const response = await request({
+            url: `/knowledge_base/knowledge-bases/${knowledgeBaseId.value}/documents`,
+            method: 'get'
+        });
+
+        console.log('知识库文档API响应:', response);
+
+        // 处理响应
+        let docList = [];
+        if (Array.isArray(response)) {
+            docList = response;
+            console.log('接收到直接数组格式的文档列表');
+        } else if (response && response.code === '200' && Array.isArray(response.documents)) {
+            docList = response.documents;
+            console.log('接收到code:200和documents数组格式');
+        } else if (response && Array.isArray(response.data)) {
+            docList = response.data;
+            console.log('接收到data数组格式');
         }
 
-        // 使用Set跟踪已加载的文档ID，确保不会出现重复
-        const loadedDocIds = new Set();
-        // 记录成功加载的文档和失败的文档ID
-        const failedDocIds = [];
+        console.log('解析后的文档列表:', docList);
 
-        // 过滤掉测试文档'd1'
-        const filteredDocIds = docIds.filter(docId => docId !== 'd1');
-
-        // 尝试从后端获取文档详情
-        for (const docId of filteredDocIds) {
-            // 如果已经加载过该ID的文档，跳过
-            if (loadedDocIds.has(docId)) {
-                continue;
-            }
-
-            try {
-                // 尝试通过API获取文档信息
-                const response = await request.get(`/document/${docId}`);
-                if (response && response.code === 200) {
-                    documents.value.push({
-                        id: docId,
-                        title: response.document.title,
-                        createTime: new Date(response.document.createTime).toLocaleDateString(),
-                        updateTime: new Date(response.document.updateTime).toLocaleDateString()
-                    });
-                    loadedDocIds.add(docId);
-                } else {
-                    failedDocIds.push(docId);
-                }
-            } catch (error) {
-                console.error(`获取文档 ${docId} 详情失败:`, error);
-                failedDocIds.push(docId);
-            }
+        if (docList.length === 0) {
+            console.log('知识库中没有文档');
+            documents.value = [];
+            return;
         }
 
-        // 如果有加载失败的文档，尝试从最近访问记录中找到对应信息
-        if (failedDocIds.length > 0) {
-            const recentDocs = knowledgeBaseStore.getRecentAccessDocs;
+        // 处理文档数据
+        documents.value = docList.map(doc => ({
+            id: doc.id,
+            title: doc.title || '未命名文档',
+            updateTime: doc.updated_at || new Date().toLocaleString(),
+            createTime: doc.created_at || new Date().toLocaleString(),
+            category: doc.category || '未分类',
+            wordCount: doc.word_count || 0
+        }));
 
-            // 从最近访问记录中查找信息
-            for (const docId of failedDocIds) {
-                // 跳过已加载的文档和测试文档'd1'
-                if (loadedDocIds.has(docId) || docId === 'd1') {
-                    continue;
-                }
+        console.log('处理后的文档列表:', documents.value);
 
-                const docInfo = recentDocs.find(doc => doc.id === docId);
-
-                if (docInfo) {
-                    // 如果在最近访问中找到了该文档信息，使用它
-                    documents.value.push({
-                        id: docId,
-                        title: docInfo.title,
-                        createTime: '未知',
-                        updateTime: docInfo.accessTime || '未知'
-                    });
-                    loadedDocIds.add(docId);
-                } else {
-                    // 从关联中删除不存在的文档
-                    console.warn(`文档 ${docId} 不存在，从知识库中移除`);
-                    knowledgeBaseStore.removeDocumentFromKnowledgeBase(knowledgeBaseId.value, docId);
-                }
-            }
-
-            // 如果有文档被移除，显示提示
-            if (failedDocIds.some(docId => !loadedDocIds.has(docId))) {
-                ElMessage.warning(`部分文档已不存在，已自动从知识库中移除`);
-            }
-        }
+        // 刷新知识库中的文档关联
+        await knowledgeBaseStore.refreshDocumentAssociations(knowledgeBaseId.value);
     } catch (error) {
         console.error('加载知识库文档失败:', error);
-        ElMessage.error('加载知识库文档失败');
+        ElMessage.error('加载知识库文档失败，请稍后重试');
+        // 使用空数组作为默认值
+        documents.value = [];
+    } finally {
+        loading.value = false;
     }
 };
 
-// 加载所有文档列表（用于添加文档对话框）
-const loadAllDocuments = async () => {
+// 获取文档数量
+const getDocumentCount = (knowledgeBaseId) => {
     try {
-        // 尝试从API获取所有文档
-        const response = await request.get('/document/list');
-        if (response && response.code === 200 && Array.isArray(response.documents)) {
-            // 使用Set存储已处理的文档ID和标题，用于去重
-            const uniqueDocIds = new Set();
-            const uniqueDocTitles = new Set();
+        // 转为字符串ID便于比较
+        const kbIdStr = String(knowledgeBaseId);
 
-            // 过滤掉测试文档'd1'并进行ID和标题去重
-            allDocuments.value = response.documents
-                .filter(doc => {
-                    // 跳过'd1'文档和已经处理过的相同ID或标题的文档
-                    if (doc.id === 'd1' || uniqueDocIds.has(doc.id) || uniqueDocTitles.has(doc.title)) {
-                        return false;
-                    }
-                    uniqueDocIds.add(doc.id);
-                    uniqueDocTitles.add(doc.title);
-                    return true;
-                })
-                .map(doc => ({
-                    id: doc.id,
-                    title: doc.title,
-                    updateTime: new Date(doc.updateTime).toLocaleDateString(),
-                    rawUpdateTime: new Date(doc.updateTime).getTime()  // 保存原始时间戳用于排序
-                }))
-                .sort((a, b) => b.rawUpdateTime - a.rawUpdateTime);  // 按更新时间降序排列
-        } else {
-            // 如果API请求失败，使用本地存储的文档列表
-            // 获取最近访问的文档
-            const recentDocs = knowledgeBaseStore.getRecentAccessDocs;
-
-            // 使用最近访问的真实文档作为备选，并去除重复项和测试文档
-            if (recentDocs && recentDocs.length > 0) {
-                // 使用Set去重，确保每个文档ID和标题只出现一次
-                const uniqueDocIds = new Set();
-                const uniqueDocTitles = new Set();
-
-                // 按访问时间排序的最近文档
-                allDocuments.value = recentDocs
-                    .filter(doc => {
-                        // 过滤掉'd1'文档以及已经添加过的相同ID或标题的文档
-                        if (doc.id === 'd1' || uniqueDocIds.has(doc.id) || uniqueDocTitles.has(doc.title)) {
-                            return false;
-                        }
-                        uniqueDocIds.add(doc.id);
-                        uniqueDocTitles.add(doc.title);
-                        return true;
-                    })
-                    .map(doc => ({
-                        id: doc.id,
-                        title: doc.title,
-                        updateTime: doc.accessTime || '最近访问'
-                    }));
-            } else {
-                // 如果没有访问历史，显示空列表
-                allDocuments.value = [];
-                ElMessage.warning('无法获取文档列表，请先创建或访问一些文档');
-            }
+        // 确保documentCountCache.value已初始化
+        if (!documentCountCache || !documentCountCache.value) {
+            documentCountCache.value = {};
         }
+
+        // 如果缓存中没有，则获取最新数据
+        if (documentCountCache.value[kbIdStr] === undefined) {
+            console.log(`获取知识库 ${kbIdStr} 的文档数量`);
+            const count = knowledgeBaseStore.getDocumentsInKnowledgeBase(kbIdStr).length || 0;
+            documentCountCache.value[kbIdStr] = count;
+        }
+
+        return documentCountCache.value[kbIdStr];
     } catch (error) {
-        console.error('加载文档列表失败:', error);
-        // 使用最近访问的文档列表，并进行去重
-        const recentDocs = knowledgeBaseStore.getRecentAccessDocs;
-        if (recentDocs && recentDocs.length > 0) {
-            // 使用Set去重，确保每个文档ID和标题只出现一次
-            const uniqueDocIds = new Set();
-            const uniqueDocTitles = new Set();
-
-            allDocuments.value = recentDocs
-                .filter(doc => {
-                    // 过滤掉'd1'文档以及已经添加过的相同ID或标题的文档
-                    if (doc.id === 'd1' || uniqueDocIds.has(doc.id) || uniqueDocTitles.has(doc.title)) {
-                        return false;
-                    }
-                    uniqueDocIds.add(doc.id);
-                    uniqueDocTitles.add(doc.title);
-                    return true;
-                })
-                .map(doc => ({
-                    id: doc.id,
-                    title: doc.title,
-                    updateTime: doc.accessTime || '最近访问'
-                }));
-        } else {
-            allDocuments.value = [];
-            ElMessage.warning('无法获取文档列表，请先创建或访问一些文档');
-        }
+        console.error('获取文档数量出错:', error);
+        return 0; // 发生错误时返回0
     }
 };
 
-// 监听添加文档对话框打开
-watch(showAddDocDialog, async (isOpen) => {
-    if (isOpen) {
-        // 当对话框打开时加载所有文档
-        await loadAllDocuments();
-    }
-});
-
-// 添加一个openAddDocDialog方法
-const openAddDocDialog = () => {
-    // 清空之前的文档列表和选择状态
-    allDocuments.value = [];
-    selectedDocuments.value = [];
-    // 打开对话框
-    showAddDocDialog.value = true;
+// 格式化日期
+const formatDate = (date) => {
+    if (!date) return '无';
+    const formattedDate = new Date(date).toLocaleString();
+    return formattedDate;
 };
-
-// 初始化
-onMounted(async () => {
-    if (knowledgeBaseId.value) {
-        await loadKnowledgeBaseDetails(knowledgeBaseId.value);
-    }
-});
 </script>
 
 <style scoped>

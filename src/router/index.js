@@ -38,10 +38,12 @@ const router = createRouter({
         },
         {
           path: "KnowledgeBasePage",
+          name: "knowledgeBaseList",
           component: () => import("../components/KnowledgeBasePage.vue"),
         },
         {
           path: "KnowledgeBasePage/:id",
+          name: "knowledgeBaseDetail",
           component: () => import("../components/KnowledgeBasePage.vue"),
         },
         {

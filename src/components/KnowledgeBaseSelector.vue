@@ -6,7 +6,7 @@
                     <i class="ri-book-2-line"></i>
                     知识库
                     <span v-if="associatedKnowledgeBases.length > 0" class="kb-count">{{ associatedKnowledgeBases.length
-                    }}</span>
+                        }}</span>
                 </el-button>
             </template>
             <div class="popover-content">
@@ -65,6 +65,18 @@ const visible = ref(false);
 const searchQuery = ref('');
 const selectedKnowledgeBases = ref([]);
 const isDocumentValid = ref(true);
+const loading = ref(false);
+
+// 初始化
+onMounted(async () => {
+    if (props.documentId) {
+        try {
+            await loadAssociations();
+        } catch (error) {
+            console.error('加载知识库关联失败:', error);
+        }
+    }
+});
 
 // 获取所有知识库
 const allKnowledgeBases = computed(() => knowledgeBaseStore.getKnowledgeBases);
@@ -94,70 +106,75 @@ const associatedKnowledgeBases = computed(() => {
     return allKnowledgeBases.value.filter(kb => kbIds.includes(kb.id));
 });
 
-// 验证当前文档是否有效
-const validateDocument = () => {
-    // 检查documentId是否存在于最近访问记录中
-    const recentDocs = knowledgeBaseStore.getRecentAccessDocs;
-    const isInRecent = recentDocs.some(doc => doc.id === props.documentId);
-
-    // 如果在最近记录中找到，则文档有效
-    isDocumentValid.value = isInRecent;
-
-    // 如果是新文档（ID以new-doc开头），也认为是有效的
-    if (props.documentId.toString().startsWith('new-doc-')) {
-        isDocumentValid.value = true;
+// 监听popover显示状态，显示时加载最新的知识库数据
+watch(visible, async (newValue) => {
+    if (newValue) {
+        loading.value = true;
+        try {
+            // 确保加载最新的知识库数据
+            await knowledgeBaseStore.loadAllData();
+            await loadAssociations();
+        } catch (error) {
+            console.error('加载知识库数据失败:', error);
+        } finally {
+            loading.value = false;
+        }
     }
+});
 
-    return isDocumentValid.value;
-};
-
-// 保存知识库关联
-const saveAssociations = () => {
-    if (!validateDocument()) {
-        ElMessage.error('无法关联知识库：文档不存在或已删除');
-        visible.value = false;
+// 加载当前文档的知识库关联
+const loadAssociations = async () => {
+    if (!props.documentId) {
+        console.warn('无效的文档ID');
         return;
     }
 
-    // 找出所有需要添加的知识库
-    selectedKnowledgeBases.value.forEach(kbId => {
-        if (!associatedKnowledgeBases.value.some(kb => kb.id === kbId)) {
-            knowledgeBaseStore.addDocumentsToKnowledgeBase(kbId, [props.documentId]);
-        }
-    });
+    isDocumentValid.value = true;
 
-    // 找出所有需要移除的知识库
-    associatedKnowledgeBases.value.forEach(kb => {
-        if (!selectedKnowledgeBases.value.includes(kb.id)) {
-            knowledgeBaseStore.removeDocumentFromKnowledgeBase(kb.id, props.documentId);
-        }
-    });
-
-    ElMessage.success('知识库关联已更新');
-    visible.value = false;
+    // 获取当前文档关联的知识库ID
+    const associations = knowledgeBaseStore.documentAssociations;
+    selectedKnowledgeBases.value = associations[props.documentId] || [];
 };
 
-// 当弹窗显示时，初始化选中状态
-watch(visible, (isVisible) => {
-    if (isVisible) {
-        // 验证文档是否有效
-        if (!validateDocument()) {
-            ElMessage.warning('当前文档可能已被删除，请先保存');
+// 保存关联
+const saveAssociations = async () => {
+    if (!props.documentId) {
+        ElMessage.warning('无效的文档ID');
+        return;
+    }
+
+    loading.value = true;
+    try {
+        const currentAssociations = knowledgeBaseStore.documentAssociations[props.documentId] || [];
+
+        // 找出需要添加的知识库
+        const toAdd = selectedKnowledgeBases.value.filter(id => !currentAssociations.includes(id));
+
+        // 找出需要移除的知识库
+        const toRemove = currentAssociations.filter(id => !selectedKnowledgeBases.value.includes(id));
+
+        // 执行添加操作
+        for (const kbId of toAdd) {
+            await knowledgeBaseStore.addDocumentToKnowledgeBase(kbId, props.documentId);
         }
 
-        // 设置已关联的知识库为选中状态
-        selectedKnowledgeBases.value = associatedKnowledgeBases.value.map(kb => kb.id);
+        // 执行移除操作
+        for (const kbId of toRemove) {
+            await knowledgeBaseStore.removeDocumentFromKnowledgeBase(kbId, props.documentId);
+        }
+
+        visible.value = false;
+
+        if (toAdd.length > 0 || toRemove.length > 0) {
+            ElMessage.success('知识库关联已更新');
+        }
+    } catch (error) {
+        console.error('更新知识库关联失败:', error);
+        ElMessage.error('更新知识库关联失败，请稍后重试');
+    } finally {
+        loading.value = false;
     }
-});
-
-// 初始化
-onMounted(() => {
-    // 验证文档是否有效
-    validateDocument();
-
-    // 当组件挂载时，初始化选中的知识库
-    selectedKnowledgeBases.value = associatedKnowledgeBases.value.map(kb => kb.id);
-});
+};
 </script>
 
 <style scoped>

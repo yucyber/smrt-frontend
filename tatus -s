@@ -1,0 +1,13 @@
+warning: in the working copy of 'src/components/DocumentPage.vue', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/router/index.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/utils/request.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/views/DashBoard.vue', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'vite.config.js', LF will be replaced by CRLF the next time Git touches it
+src/components/DocumentPage.vue
+src/components/KnowledgeBasePage.vue
+src/components/KnowledgeBaseSelector.vue
+src/router/index.js
+src/stores/knowledgeBaseStore.js
+src/utils/request.js
+src/views/DashBoard.vue
+vite.config.js
