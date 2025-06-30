@@ -41,7 +41,7 @@
     "html2canvas": "^1.4.1",
     "jsmind": "^0.8.5",
     "jspdf": "^3.0.1",
-    "lowlight": "^3.1.0",
+    "lowlight": "^3.3.0",
     "mammoth": "^1.8.0",
     "normalize.css": "^8.0.1",
     "nprogress": "^0.2.0",
