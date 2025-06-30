@@ -80,13 +80,13 @@ import { ElMessage } from "element-plus";
 import EditHeader from "../components/EditHeader.vue";
 import FixedMenu from "../components/FixedMenu.vue";
 import BubbleMenu from "../components/BubbleMenu.vue";
+import CodeBlockComponent from "../components/CodeBlockComponent.vue";
 import request from "../utils/request.js";
 import router from "../router";
 import { useRoute } from "vue-router";
-import { useUserStore } from "../stores/userStore.js";
 import NProgress from "nprogress";
 import "nprogress/nprogress.css";
-import { useEditor, EditorContent } from "@tiptap/vue-3";
+import { useEditor, EditorContent, VueNodeViewRenderer } from "@tiptap/vue-3";
 import StarterKit from "@tiptap/starter-kit";
 import TextStyle from "@tiptap/extension-text-style";
 import FontFamily from "@tiptap/extension-font-family";
@@ -103,10 +103,12 @@ import TableCell from "@tiptap/extension-table-cell";
 import TableHeader from "@tiptap/extension-table-header";
 import TableRow from "@tiptap/extension-table-row";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
-import css from "highlight.js/lib/languages/css";
-import js from "highlight.js/lib/languages/javascript";
-import ts from "highlight.js/lib/languages/typescript";
-import html from "highlight.js/lib/languages/xml";
+// import css from "highlight.js/lib/languages/css";
+// import js from "highlight.js/lib/languages/javascript";
+// import ts from "highlight.js/lib/languages/typescript";
+// import html from "highlight.js/lib/languages/xml";
+// import python from "highlight.js/lib/languages/python";
+// import java from "highlight.js/lib/languages/java";
 import { createLowlight } from "lowlight";
 import { Underline } from "@tiptap/extension-underline";
 import { TextAlign } from "@tiptap/extension-text-align";
@@ -116,68 +118,21 @@ import { Color } from "@tiptap/extension-color";
 import VueComponent from "../utils/Extension.js";
 import slash from "../utils/slash.js";
 import suggestion from "../utils/suggestion.js";
-
-const lowlight = createLowlight();
-lowlight.register({ html, ts, css, js });
+import "highlight.js/styles/github.css"; // 添加这一行
+import { common } from "lowlight";
+const lowlight = createLowlight(common);
+// lowlight.register({ html, css, js, ts, python, java });
+lowlight.register(common);
 const title = ref("");
 const documents = ref([]);
 const catalog = ref(false);
 const route = useRoute();
-const userStore = useUserStore();
-
-// 生成用户颜色的函数
-const generateUserColor = (username) => {
-  if (!username) return "#f783ac";
-
-  // 基于用户名生成一致的颜色
-  let hash = 0;
-  for (let i = 0; i < username.length; i++) {
-    hash = username.charCodeAt(i) + ((hash << 5) - hash);
-  }
-
-  // 生成明亮且对比度好的颜色
-  const colors = [
-    "#f783ac",
-    "#3b82f6",
-    "#10b981",
-    "#f59e0b",
-    "#ef4444",
-    "#8b5cf6",
-    "#06b6d4",
-    "#84cc16",
-    "#f97316",
-    "#ec4899",
-    "#6366f1",
-    "#14b8a6",
-  ];
-
-  return colors[Math.abs(hash) % colors.length];
-};
 
 // 创建编辑器实例
-// 在现有的 import 语句中添加
-import Collaboration from "@tiptap/extension-collaboration";
-import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
-import * as Y from "yjs";
-import { WebsocketProvider } from "y-websocket";
-
-// 创建 Y.js 文档和 WebSocket 提供者
-const ydoc = new Y.Doc();
-const provider = new WebsocketProvider(
-  "ws://localhost:1234",
-  "example-document",
-  ydoc
-);
-
-// 在 useEditor 的 extensions 数组中添加协同编辑扩展
 const editor = useEditor({
   content: "",
   extensions: [
-    StarterKit.configure({
-      codeBlock: false,
-      // 禁用默认的历史记录，因为协同编辑有自己的历史处理
-      history: false,
-    }),
+    StarterKit.configure({ codeBlock: false }),
     Underline,
     TextAlign.configure({ types: ["heading", "paragraph"] }),
     Superscript,
@@ -196,32 +151,32 @@ const editor = useEditor({
     TableRow,
     TableHeader,
     TableCell,
-    Placeholder.configure({
-      placeholder: ({ node }) => {
-        if (node.type.name === "paragraph" && node.childCount === 0) {
-          return "键入 / 以唤起AI助手...";
-        }
-        return "开始输入...";
+    // Placeholder.configure({
+    //   placeholder: ({ node }) => {
+    //     if (node.type.name === "paragraph" && node.childCount === 0) {
+    //       return "键入 / 以唤起AI助手...";
+    //     }
+    //     return "开始输入...";
+    //   },
+    // }),
+    // CodeBlockLowlight.configure({ lowlight }),
+    CodeBlockLowlight.extend({
+      addAttributes() {
+        return {
+          ...this.parent?.(),
+          language: {
+            default: null,
+          },
+        };
       },
+      // addNodeView() {
+      //   return VueNodeViewRenderer(CodeBlockComponent);
+      // },
+    }).configure({
+      lowlight,
     }),
-    CodeBlockLowlight.configure({ lowlight }),
     VueComponent,
-    slash.configure({ suggestion }),
-    // 添加协同编辑扩展
-    Collaboration.configure({
-      document: ydoc,
-    }),
-
-    // 添加协同光标扩展
-    CollaborationCursor.configure({
-      provider: provider,
-      user: {
-        name: userStore.username || "匿名用户", // 从用户状态获取真实用户名
-        color: generateUserColor(userStore.username), // 基于用户名生成颜色
-      },
-    }),
-
-    // ... 其他扩展
+    // slash.configure({ suggestion }),
   ],
 });
 
@@ -389,19 +344,6 @@ watch(
     }
   },
   { immediate: true } // 立即执行一次，确保首次进入页面时加载数据
-);
-
-// 监听用户信息变化，动态更新协同光标
-watch(
-  () => userStore.username,
-  (newUsername) => {
-    if (editor.value && newUsername) {
-      editor.value.commands.updateUser({
-        name: newUsername,
-        color: generateUserColor(newUsername),
-      });
-    }
-  }
 );
 
 // 销毁编辑器

@@ -34,7 +34,17 @@ const router = createRouter({
       children: [
         {
           path: "/",
-          redirect: "/dashboard/DocumentPage",
+          redirect: "/dashboard/KnowledgeBasePage",
+        },
+        {
+          path: "KnowledgeBasePage",
+          name: "knowledgeBaseList",
+          component: () => import("../components/KnowledgeBasePage.vue"),
+        },
+        {
+          path: "KnowledgeBasePage/:id",
+          name: "knowledgeBaseDetail",
+          component: () => import("../components/KnowledgeBasePage.vue"),
         },
         {
           path: "DocumentPage",

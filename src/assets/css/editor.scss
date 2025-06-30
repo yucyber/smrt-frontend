@@ -5,7 +5,7 @@
   /* selection styles */
   ::selection {
     display: inline;
-    background: rgba(0, 0, 0, 0.2);
+    background: #555;
     height: 10px;
   }
 
@@ -550,7 +550,7 @@
 
 .word-count {
   height: 3.8vh;
-  font-size: 2.5vh;
+  font-size: 1.8vh;
   color: #888;
   background-color: var(--white);
   padding-top: 0.5vh;
@@ -610,41 +610,4 @@
     border-radius: 10px;
     cursor: pointer;
   }
-}
-
-/* 协同编辑光标样式 */
-.collaboration-cursor__caret {
-  position: relative;
-  margin-left: -1px;
-  margin-right: -1px;
-  border-left: 1px solid #0d0d0d;
-  border-right: 1px solid #0d0d0d;
-  word-break: normal;
-  pointer-events: none;
-}
-
-.collaboration-cursor__label {
-  position: absolute;
-  top: -1.4em;
-  left: -1px;
-  font-size: 12px;
-  font-style: normal;
-  font-weight: 600;
-  line-height: normal;
-  user-select: none;
-  color: #0d0d0d;
-  padding: 0.1rem 0.3rem;
-  border-radius: 3px 3px 3px 0;
-  white-space: nowrap;
-  pointer-events: none;
-  z-index: 1000;
-}
-
-.collaboration-cursor__selection {
-  pointer-events: none;
-}
-
-/* ProseMirror Y.js 选择样式 */
-.ProseMirror-yjs-selection {
-  pointer-events: none;
 }

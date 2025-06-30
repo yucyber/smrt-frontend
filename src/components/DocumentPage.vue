@@ -114,6 +114,24 @@ const addRecycle = async (id) => {
 };
 // 点击文档
 const handleClick = (id) => {
+  // 记录访问 - 先获取文档标题
+  const doc = documents.value.find(doc => doc.id === id);
+  if (doc) {
+    console.log('文档页面点击记录访问:', id, doc.title);
+
+    // 直接调用API记录访问
+    request({
+      url: '/knowledge_base/user/document-access',
+      method: 'post',
+      data: {
+        document_id: id,
+        title: doc.title
+      }
+    }).catch(error => {
+      console.error('记录文档访问失败:', error);
+    });
+  }
+
   router.push({ name: 'edit', params: { id: id } });
 };
 

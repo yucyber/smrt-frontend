@@ -3,7 +3,7 @@ import { useUserStore } from "../stores/userStore.js";
 
 // 创建axios实例
 const service = axios.create({
-  baseURL: '/api',
+  baseURL: '/api',  // 修改为使用相对路径，通过Vite代理转发请求
   timeout: 50000, // 请求超时时间
   headers: {
     'Content-Type': 'application/json;charset=utf-8'
@@ -46,21 +46,61 @@ service.interceptors.request.use(
 service.interceptors.response.use(
   (response) => {
     console.log('收到响应:', response);
+    console.log('响应URL:', response.config.url);
+    console.log('响应状态:', response.status);
+    console.log('响应头:', response.headers);
+
+    // 检查响应内容类型
+    const contentType = response.headers['content-type'] || '';
+    if (contentType.includes('text/html')) {
+      console.error('收到HTML响应而非JSON:', response.data);
+      console.error('请求URL:', response.config.url);
+      console.error('请求方法:', response.config.method);
+
+      // 返回一个基本结构，避免前端出错
+      return {
+        code: 200,
+        data: [],
+        message: '服务器返回了HTML而非JSON，可能API路径有误或后端未正确处理请求'
+      };
+    }
 
     let res = response.data;
 
-    if (response.status === 200) {
+    if (response.status === 200 || response.status === 201) {
       //如果返回的是文件
       if (response.config.responseType === "blob") {
         return res;
       }
       //兼容返回的字符串数据
       if (typeof res === "string") {
-        res = res ? JSON.parse(res) : res;
+        try {
+          res = res ? JSON.parse(res) : res;
+        } catch (e) {
+          console.error('JSON解析错误:', e);
+          console.error('原始响应内容:', res);
+          // 返回一个基本结构，避免前端出错
+          return {
+            code: 200,
+            data: [],
+            message: '响应数据解析错误'
+          };
+        }
       }
+
+      // 如果没有code字段，添加一个默认的code
+      if (!res.code) {
+        res.code = 200;
+      }
+
+      // 如果没有data字段，添加一个空数组
+      if (!res.data && res.code === 200) {
+        res.data = [];
+      }
+
       return res;
     } else {
-      console.error('响应状态码非200:', response.status);
+      console.error('响应状态码非200/201:', response.status);
       return Promise.reject(new Error('请求失败: ' + response.status));
     }
   },
@@ -94,9 +134,21 @@ service.interceptors.response.use(
         // 跳转到登录页面
         window.location.href = '/login';
       }
+
+      // 返回一个基本结构，避免前端出错
+      return Promise.reject({
+        code: error.response.status,
+        message: error.message || '请求失败',
+        data: []
+      });
     }
 
-    return Promise.reject(error);
+    // 对于网络错误等情况，返回一个基本结构
+    return Promise.reject({
+      code: 500,
+      message: error.message || '网络错误',
+      data: []
+    });
   }
 );
 
