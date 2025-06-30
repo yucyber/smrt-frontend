@@ -80,7 +80,6 @@ import { ElMessage } from "element-plus";
 import EditHeader from "../components/EditHeader.vue";
 import FixedMenu from "../components/FixedMenu.vue";
 import BubbleMenu from "../components/BubbleMenu.vue";
-import CodeBlockComponent from "../components/CodeBlockComponent.vue";
 import request from "../utils/request.js";
 import router from "../router";
 import { useRoute } from "vue-router";
@@ -103,12 +102,6 @@ import TableCell from "@tiptap/extension-table-cell";
 import TableHeader from "@tiptap/extension-table-header";
 import TableRow from "@tiptap/extension-table-row";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
-// import css from "highlight.js/lib/languages/css";
-// import js from "highlight.js/lib/languages/javascript";
-// import ts from "highlight.js/lib/languages/typescript";
-// import html from "highlight.js/lib/languages/xml";
-// import python from "highlight.js/lib/languages/python";
-// import java from "highlight.js/lib/languages/java";
 import { createLowlight } from "lowlight";
 import { Underline } from "@tiptap/extension-underline";
 import { TextAlign } from "@tiptap/extension-text-align";
@@ -118,7 +111,7 @@ import { Color } from "@tiptap/extension-color";
 import VueComponent from "../utils/Extension.js";
 import slash from "../utils/slash.js";
 import suggestion from "../utils/suggestion.js";
-import "highlight.js/styles/github.css"; // 添加这一行
+import "highlight.js/styles/github.css";
 import { common } from "lowlight";
 const lowlight = createLowlight(common);
 // lowlight.register({ html, css, js, ts, python, java });
@@ -150,7 +143,9 @@ const editor = useEditor({
     Table.configure({ resizable: true }),
     TableRow,
     TableHeader,
+    VueComponent,
     TableCell,
+    CodeBlockLowlight.configure({ lowlight }),
     // Placeholder.configure({
     //   placeholder: ({ node }) => {
     //     if (node.type.name === "paragraph" && node.childCount === 0) {
@@ -159,23 +154,21 @@ const editor = useEditor({
     //     return "开始输入...";
     //   },
     // }),
-    // CodeBlockLowlight.configure({ lowlight }),
-    CodeBlockLowlight.extend({
-      addAttributes() {
-        return {
-          ...this.parent?.(),
-          language: {
-            default: null,
-          },
-        };
-      },
-      // addNodeView() {
-      //   return VueNodeViewRenderer(CodeBlockComponent);
-      // },
-    }).configure({
-      lowlight,
-    }),
-    VueComponent,
+    // CodeBlockLowlight.extend({
+    //   addAttributes() {
+    //     return {
+    //       ...this.parent?.(),
+    //       language: {
+    //         default: null,
+    //       },
+    //     };
+    //   },
+    //   // addNodeView() {
+    //   //   return VueNodeViewRenderer(CodeBlockComponent);
+    //   // },
+    // }).configure({
+    //   lowlight,
+    // }),
     // slash.configure({ suggestion }),
   ],
 });
