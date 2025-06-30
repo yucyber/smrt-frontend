@@ -80,12 +80,13 @@ import { ElMessage } from "element-plus";
 import EditHeader from "../components/EditHeader.vue";
 import FixedMenu from "../components/FixedMenu.vue";
 import BubbleMenu from "../components/BubbleMenu.vue";
+import CodeBlockComponent from "../components/CodeBlockComponent.vue";
 import request from "../utils/request.js";
 import router from "../router";
 import { useRoute } from "vue-router";
 import NProgress from "nprogress";
 import "nprogress/nprogress.css";
-import { useEditor, EditorContent } from "@tiptap/vue-3";
+import { useEditor, EditorContent, VueNodeViewRenderer } from "@tiptap/vue-3";
 import StarterKit from "@tiptap/starter-kit";
 import TextStyle from "@tiptap/extension-text-style";
 import FontFamily from "@tiptap/extension-font-family";
@@ -102,10 +103,12 @@ import TableCell from "@tiptap/extension-table-cell";
 import TableHeader from "@tiptap/extension-table-header";
 import TableRow from "@tiptap/extension-table-row";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
-import css from "highlight.js/lib/languages/css";
-import js from "highlight.js/lib/languages/javascript";
-import ts from "highlight.js/lib/languages/typescript";
-import html from "highlight.js/lib/languages/xml";
+// import css from "highlight.js/lib/languages/css";
+// import js from "highlight.js/lib/languages/javascript";
+// import ts from "highlight.js/lib/languages/typescript";
+// import html from "highlight.js/lib/languages/xml";
+// import python from "highlight.js/lib/languages/python";
+// import java from "highlight.js/lib/languages/java";
 import { createLowlight } from "lowlight";
 import { Underline } from "@tiptap/extension-underline";
 import { TextAlign } from "@tiptap/extension-text-align";
@@ -115,9 +118,11 @@ import { Color } from "@tiptap/extension-color";
 import VueComponent from "../utils/Extension.js";
 import slash from "../utils/slash.js";
 import suggestion from "../utils/suggestion.js";
-
-const lowlight = createLowlight();
-lowlight.register({ html, ts, css, js });
+import "highlight.js/styles/github.css"; // 添加这一行
+import { common } from "lowlight";
+const lowlight = createLowlight(common);
+// lowlight.register({ html, css, js, ts, python, java });
+lowlight.register(common);
 const title = ref("");
 const documents = ref([]);
 const catalog = ref(false);
@@ -146,17 +151,32 @@ const editor = useEditor({
     TableRow,
     TableHeader,
     TableCell,
-    Placeholder.configure({
-      placeholder: ({ node }) => {
-        if (node.type.name === "paragraph" && node.childCount === 0) {
-          return "键入 / 以唤起AI助手...";
-        }
-        return "开始输入...";
+    // Placeholder.configure({
+    //   placeholder: ({ node }) => {
+    //     if (node.type.name === "paragraph" && node.childCount === 0) {
+    //       return "键入 / 以唤起AI助手...";
+    //     }
+    //     return "开始输入...";
+    //   },
+    // }),
+    // CodeBlockLowlight.configure({ lowlight }),
+    CodeBlockLowlight.extend({
+      addAttributes() {
+        return {
+          ...this.parent?.(),
+          language: {
+            default: null,
+          },
+        };
       },
+      // addNodeView() {
+      //   return VueNodeViewRenderer(CodeBlockComponent);
+      // },
+    }).configure({
+      lowlight,
     }),
-    CodeBlockLowlight.configure({ lowlight }),
     VueComponent,
-    slash.configure({ suggestion }),
+    // slash.configure({ suggestion }),
   ],
 });
 
