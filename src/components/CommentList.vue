@@ -7,7 +7,7 @@
       </el-button>
     </div>
     <div class="comment-list" v-if="comments.length > 0">
-      <div v-for="comment in comments" :key="comment.id" class="comment-item">
+      <div v-for="comment in comments" :key="comment.id" class="comment-item" :data-comment-id="comment.id">
         <div class="comment-item-header">
           <div class="user-info">
             <div class="user-avatar" :style="{ backgroundColor: getUserColor(comment.user.name) }">
@@ -235,5 +235,11 @@ const deleteComment = (commentId) => {
 .empty-state p {
   font-size: 14px;
   margin: 0;
+}
+
+/* 评论高亮样式 */
+.comment-item.highlight-comment {
+  background-color: rgba(255, 230, 0, 0.2);
+  transition: background-color 0.3s ease;
 }
 </style>

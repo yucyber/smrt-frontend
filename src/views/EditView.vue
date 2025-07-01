@@ -394,6 +394,40 @@ const loadDocuments = async () => {
         ElMessage.info("只读模式");
       }
       title.value = response.document.title;
+
+      // 加载文档评论
+      try {
+        const commentsResponse = await request.get(
+          `/document/comment/document/${currentDocId}`
+        );
+        if (commentsResponse.code == 200) {
+          comments.value = commentsResponse.comments || [];
+          console.log("加载评论成功:", comments.value.length, "条评论");
+
+          // 如果有评论，为每条评论添加标记
+          if (comments.value.length > 0 && editor.value) {
+            comments.value.forEach((comment) => {
+              const { from, to } = comment.range;
+              editor.value
+                .chain()
+                .setTextSelection({ from, to })
+                .setMark("comment", {
+                  commentId: comment.id,
+                  commentData: comment,
+                })
+                .run();
+            });
+            // 重置选区
+            editor.value.chain().focus().run();
+          }
+        } else {
+          console.warn("获取评论失败:", commentsResponse?.message);
+          comments.value = [];
+        }
+      } catch (error) {
+        console.error("加载评论错误:", error);
+        comments.value = [];
+      }
     } else {
       console.error("获取文档内容失败:", response?.message);
       // 设置默认内容
@@ -435,39 +469,98 @@ const InsertErnie = (prompt) => {
 };
 
 // 处理评论添加
-const handleCommentAdded = (comment) => {
-  comments.value.push(comment);
-  // 可以在这里添加保存评论到后端的逻辑
+const handleCommentAdded = async (comment) => {
+  try {
+    // 获取当前文档ID
+    const currentDocId = router.currentRoute.value.params.id;
+
+    // 如果是新文档（ID以new-doc-开头），先保存文档获取真实ID
+    let documentId = currentDocId;
+    if (currentDocId.toString().startsWith("new-doc-")) {
+      const saveResponse = await request.post("/document", {
+        title: title.value,
+        content: editor.value.getHTML(),
+      });
+
+      if (saveResponse.code === "200") {
+        documentId = saveResponse.id;
+        // 更新路由到新的文档ID
+        router.replace({ name: "edit", params: { id: documentId } });
+      } else {
+        ElMessage.error("保存文档失败，无法添加评论");
+        return;
+      }
+    }
+
+    // 准备评论数据
+    const commentData = {
+      ...comment,
+      document_id: parseInt(documentId),
+      selected_text: comment.selectedText, // 添加selected_text字段，后端API需要
+      range_from: comment.range.from, // 直接使用range_from和range_to字段，与后端数据库字段对应
+      range_to: comment.range.to,
+      range: {
+        from: comment.range.from,
+        to: comment.range.to,
+      },
+    };
+
+    // 发送到后端
+    const response = await request.post("/document/comment", commentData);
+
+    if (response.code === "200") {
+      // 添加到本地评论列表
+      comments.value.push(comment);
+      ElMessage.success("评论添加成功");
+    } else {
+      ElMessage.error(response.message || "评论添加失败");
+    }
+  } catch (error) {
+    console.error("添加评论错误:", error);
+    ElMessage.error(error.message || "添加评论时发生错误");
+  }
 };
 
 // 删除评论
-const deleteComment = (commentId) => {
-  // 找到要删除的评论
-  const commentIndex = comments.value.findIndex((c) => c.id === commentId);
-  if (commentIndex === -1) return;
+const deleteComment = async (commentId) => {
+  try {
+    // 找到要删除的评论
+    const commentIndex = comments.value.findIndex((c) => c.id === commentId);
+    if (commentIndex === -1) return;
 
-  const comment = comments.value[commentIndex];
+    const comment = comments.value[commentIndex];
 
-  // 从评论数组中移除
-  comments.value.splice(commentIndex, 1);
+    // 调用后端API删除评论
+    const response = await request.delete(`/document/comment/${commentId}`);
 
-  // 如果编辑器存在，移除对应的评论标记
-  if (editor.value) {
-    const { from, to } = comment.range;
-    editor.value
-      .chain()
-      .focus()
-      .setTextSelection({ from, to })
-      .unsetMark("comment")
-      .run();
+    if (response.code === "200") {
+      // 从评论数组中移除
+      comments.value.splice(commentIndex, 1);
+
+      // 如果编辑器存在，移除对应的评论标记
+      if (editor.value) {
+        const { from, to } = comment.range;
+        editor.value
+          .chain()
+          .focus()
+          .setTextSelection({ from, to })
+          .unsetMark("comment")
+          .run();
+      }
+
+      // 如果没有评论了，隐藏评论列表
+      if (comments.value.length === 0) {
+        showCommentList.value = false;
+      }
+
+      ElMessage.success("评论删除成功");
+    } else {
+      ElMessage.error(response.message || "评论删除失败");
+    }
+  } catch (error) {
+    console.error("删除评论错误:", error);
+    ElMessage.error(error.message || "删除评论时发生错误");
   }
-
-  // 如果没有评论了，隐藏评论列表
-  if (comments.value.length === 0) {
-    showCommentList.value = false;
-  }
-
-  // 可以在这里添加从后端删除评论的逻辑
 };
 
 // 跳转到评论位置
@@ -504,6 +597,53 @@ const toggleCommentList = () => {
   showCommentList.value = !showCommentList.value;
 };
 
+// 监听评论点击事件
+const handleCommentClick = (event) => {
+  const { comment } = event.detail;
+  if (comment) {
+    // 显示评论列表
+    showCommentList.value = true;
+    
+    // 高亮显示被点击的评论文本
+    if (editor.value) {
+      const { from, to } = comment.range;
+      // 设置选区并滚动到可见区域
+      editor.value.chain().focus().setTextSelection({ from, to }).run();
+
+      // 高亮显示评论文本
+      const selection = { from, to };
+      editor.value
+        .chain()
+        .setTextSelection(selection)
+        .setHighlight({ color: "#fff8c5" }) // 设置临时高亮
+        .run();
+
+      // 在短暂延迟后移除高亮
+      setTimeout(() => {
+        if (editor.value) {
+          editor.value
+            .chain()
+            .setTextSelection(selection)
+            .unsetHighlight() // 移除高亮
+            .run();
+        }
+      }, 1500);
+    }
+    
+    // 高亮显示评论列表中的对应评论
+    setTimeout(() => {
+      const commentListItem = document.querySelector(`.comment-item[data-comment-id="${comment.id}"]`);
+      if (commentListItem) {
+        commentListItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        commentListItem.classList.add('highlight-comment');
+        setTimeout(() => {
+          commentListItem.classList.remove('highlight-comment');
+        }, 1500);
+      }
+    }, 100);
+  }
+};
+
 watch(
   () => route.params.id,
   (newId) => {
@@ -526,8 +666,24 @@ watch(
     }
   }
 );
-// 销毁编辑器
+// 添加评论点击事件监听
+onMounted(() => {
+  // 监听评论点击事件
+  const editorContent = document.getElementById('editor-content');
+  if (editorContent) {
+    editorContent.addEventListener('comment-clicked', handleCommentClick);
+  }
+});
+
+// 销毁编辑器和移除事件监听
 onBeforeUnmount(() => {
+  // 移除评论点击事件监听
+  const editorContent = document.getElementById('editor-content');
+  if (editorContent) {
+    editorContent.removeEventListener('comment-clicked', handleCommentClick);
+  }
+  
+  // 销毁编辑器
   editor.value?.destroy();
 });
 </script>
@@ -605,6 +761,23 @@ onBeforeUnmount(() => {
   border-radius: 20px;
   padding: 8px 16px;
   box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+}
+
+/* 评论高亮样式 */
+.highlight-comment {
+  animation: pulse-highlight 1.5s ease-in-out;
+}
+
+@keyframes pulse-highlight {
+  0% {
+    background-color: rgba(255, 230, 0, 0.2);
+  }
+  50% {
+    background-color: rgba(255, 230, 0, 0.5);
+  }
+  100% {
+    background-color: rgba(255, 230, 0, 0.2);
+  }
 }
 
 /* 评论标记样式 */
