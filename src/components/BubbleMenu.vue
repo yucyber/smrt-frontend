@@ -83,6 +83,9 @@
       <button @click="editor.chain().focus().setHorizontalRule().run()">
         <i class="ri-separator"></i>
       </button>
+      <button @click="showCommentPanel" title="添加评论">
+        <i class="ri-chat-1-line"></i>
+      </button>
       <!-- <el-divider direction="vertical" /> -->
       <!-- <el-dropdown trigger="click">
         <el-button type="primary" text bg><i class="ri-bard-line"></i>AI <i class="ri-arrow-drop-down-fill"></i>
@@ -98,11 +101,31 @@
       </el-dropdown> -->
     </div>
   </bubble-menu>
+
+  <!-- 评论面板 -->
+  <CommentPanel
+    v-if="showingCommentPanel"
+    :editor="editor"
+    :isVisible="showingCommentPanel"
+    :selectedText="selectedText"
+    :position="commentPanelPosition"
+    @close="closeCommentPanel"
+    @add-comment="addComment"
+    :style="{
+      position: 'absolute',
+      left: `${commentPanelPosition.x}px`,
+      top: `${commentPanelPosition.y}px`,
+      zIndex: 1000,
+    }"
+  />
 </template>
 
 <script setup>
 import { BubbleMenu } from "@tiptap/vue-3";
-import { computed } from "vue";
+import { computed, ref } from "vue";
+import { v4 as uuidv4 } from "uuid";
+import CommentPanel from "./CommentPanel.vue";
+import { useUserStore } from "../stores/userStore.js";
 // import {
 //   ElButton,
 //   ElDivider,
@@ -115,7 +138,13 @@ import { computed } from "vue";
 const props = defineProps({
   editor: Object,
 });
+const emit = defineEmits(["comment-added"]);
+const userStore = useUserStore();
 
+// 评论面板相关状态
+const showingCommentPanel = ref(false);
+const selectedText = ref("");
+const commentPanelPosition = ref({ x: 0, y: 0 });
 // 计算标题级别
 const headingLevel = computed(() => {
   for (let level = 1; level <= 4; level++) {
@@ -134,6 +163,70 @@ const headingStyle = computed(() => {
   return props.editor.isActive("heading", { level: headingLevel.value });
 });
 
+// 显示评论面板
+const showCommentPanel = () => {
+  const { from, to } = props.editor.state.selection;
+
+  // 检查是否有选中文本
+  if (from === to) {
+    // 如果没有选中文本，显示提示
+    alert("请先选中文本再添加评论");
+    return;
+  }
+
+  // 获取选中的文本
+  selectedText.value = props.editor.state.doc.textBetween(from, to, " ");
+
+  // 计算评论面板位置
+  const editorView = props.editor.view;
+  const { top, right } = editorView.coordsAtPos(to);
+  commentPanelPosition.value = {
+    x: right + 10,
+    y: top,
+  };
+
+  // 显示评论面板
+  showingCommentPanel.value = true;
+};
+
+// 添加评论
+const addComment = (commentData) => {
+  const { from, to } = props.editor.state.selection;
+
+  // 生成唯一的评论ID
+  const commentId = uuidv4();
+
+  // 创建评论数据
+  const comment = {
+    id: commentId,
+    ...commentData,
+    selectedText: selectedText.value,
+    range: { from, to },
+    user: {
+      name: userStore.username || "匿名用户",
+      id: userStore.userId || "1",
+    },
+  };
+
+  // 应用评论标记
+  props.editor
+    .chain()
+    .focus()
+    .setMark("comment", { commentId, commentData: comment })
+    .run();
+
+  // 通知父组件评论已添加
+  emit("comment-added", comment);
+
+  // 关闭评论面板
+  closeCommentPanel();
+};
+
+// 关闭评论面板
+const closeCommentPanel = () => {
+  showingCommentPanel.value = false;
+  selectedText.value = "";
+};
 // AI功能
 // const AIfunc = async (command) => {
 //   let { from, to } = props.editor.state.selection;

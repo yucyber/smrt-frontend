@@ -14,6 +14,7 @@
         v-if="editor"
         :editor="editor"
         :tippy-options="{ duration: 100 }"
+        @comment-added="handleCommentAdded"
       />
 
       <div class="editor-container">
@@ -70,6 +71,29 @@
       <div class="word-count">
         总字符数：{{ editor?.storage.characterCount.characters() }}
       </div>
+
+      <!-- 评论列表 -->
+      <CommentList
+        v-if="showCommentList && comments.length > 0"
+        :comments="comments"
+        :editor="editor"
+        @close="showCommentList = false"
+        @delete-comment="deleteComment"
+        @go-to-comment="goToComment"
+        class="comment-list-container"
+      />
+
+      <!-- 评论按钮 -->
+      <el-button
+        v-if="comments.length > 0"
+        class="comment-toggle-btn"
+        type="primary"
+        size="small"
+        @click="toggleCommentList"
+      >
+        <i class="ri-chat-1-line"></i>
+        评论 ({{ comments.length }})
+      </el-button>
     </el-main>
   </el-container>
 </template>
@@ -119,6 +143,8 @@ import { Color } from "@tiptap/extension-color";
 import VueComponent from "../utils/Extension.js";
 import slash from "../utils/slash.js";
 import suggestion from "../utils/suggestion.js";
+import { Comment } from "../utils/CommentExtension.js";
+import CommentList from "../components/CommentList.vue";
 import "highlight.js/styles/github.css"; // 添加这一行
 import { common } from "lowlight";
 const lowlight = createLowlight(common);
@@ -130,6 +156,10 @@ const catalog = ref(false);
 const route = useRoute();
 const userStore = useUserStore();
 
+// 评论相关状态
+const comments = ref([]);
+const showCommentList = ref(false);
+const commentListPosition = ref({ x: 0, y: 0 });
 // 生成用户颜色的函数
 const generateUserColor = (username) => {
   if (!username) return "#f783ac";
@@ -240,6 +270,9 @@ const editor = useEditor({
         color: generateUserColor(userStore.username), // 基于用户名生成颜色
       },
     }),
+
+    // 添加评论扩展
+    Comment,
 
     // ... 其他扩展
   ],
@@ -401,6 +434,76 @@ const InsertErnie = (prompt) => {
   editor.value.chain().blur().run();
 };
 
+// 处理评论添加
+const handleCommentAdded = (comment) => {
+  comments.value.push(comment);
+  // 可以在这里添加保存评论到后端的逻辑
+};
+
+// 删除评论
+const deleteComment = (commentId) => {
+  // 找到要删除的评论
+  const commentIndex = comments.value.findIndex((c) => c.id === commentId);
+  if (commentIndex === -1) return;
+
+  const comment = comments.value[commentIndex];
+
+  // 从评论数组中移除
+  comments.value.splice(commentIndex, 1);
+
+  // 如果编辑器存在，移除对应的评论标记
+  if (editor.value) {
+    const { from, to } = comment.range;
+    editor.value
+      .chain()
+      .focus()
+      .setTextSelection({ from, to })
+      .unsetMark("comment")
+      .run();
+  }
+
+  // 如果没有评论了，隐藏评论列表
+  if (comments.value.length === 0) {
+    showCommentList.value = false;
+  }
+
+  // 可以在这里添加从后端删除评论的逻辑
+};
+
+// 跳转到评论位置
+const goToComment = (comment) => {
+  if (!editor.value) return;
+
+  const { from, to } = comment.range;
+
+  // 设置选区并滚动到可见区域
+  editor.value.chain().focus().setTextSelection({ from, to }).run();
+
+  // 高亮显示评论文本
+  const selection = { from, to };
+  editor.value
+    .chain()
+    .setTextSelection(selection)
+    .setHighlight({ color: "#dedcff" }) // 设置临时高亮
+    .run();
+
+  // 在短暂延迟后移除高亮
+  setTimeout(() => {
+    if (editor.value) {
+      editor.value
+        .chain()
+        .setTextSelection(selection)
+        .unsetHighlight() // 移除高亮
+        .run();
+    }
+  }, 800);
+};
+
+// 切换评论列表显示
+const toggleCommentList = () => {
+  showCommentList.value = !showCommentList.value;
+};
+
 watch(
   () => route.params.id,
   (newId) => {
@@ -457,6 +560,7 @@ onBeforeUnmount(() => {
 .main {
   padding: 1vh;
   overflow-y: hidden;
+  position: relative;
 }
 
 .fade-enter-active,
@@ -481,5 +585,37 @@ onBeforeUnmount(() => {
 
 .title.outline-active .slider {
   transform: translateX(100%);
+}
+
+/* 评论相关样式 */
+.comment-list-container {
+  position: fixed;
+  top: 80px;
+  right: 20px;
+  z-index: 1000;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.comment-toggle-btn {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 900;
+  border-radius: 20px;
+  padding: 8px 16px;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+}
+
+/* 评论标记样式 */
+:deep(span[data-comment-id]) {
+  background-color: rgba(255, 230, 0, 0.2);
+  border-bottom: 2px solid #ffcc00;
+  cursor: pointer;
+  padding: 2px 0;
+}
+
+:deep(span[data-comment-id]:hover) {
+  background-color: rgba(255, 230, 0, 0.4);
 }
 </style>
