@@ -585,15 +585,12 @@ const documentSummary = async () => {
   summaryText.value = "";
 
   try {
-    const response = await fetch("/api/function/AIFunc", {
+    const response = await fetch("/api/function/chatglm/stream", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        text: fullText,
-        command: "文档摘要",
-      }),
+      body: JSON.stringify({ messages: [{ role: "user", content: fullText }] }),
     });
 
     if (!response.ok) {
