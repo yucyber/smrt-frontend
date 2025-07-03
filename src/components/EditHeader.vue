@@ -224,11 +224,27 @@ const save = async () => {
     text: "正在保存...",
   });
   try {
+    const documentId = router.currentRoute.value.params.id;
+    const content = props.editor.getHTML();
+    
+    // 保存文档
     const response = await request.put(
-      "/document/" + router.currentRoute.value.params.id,
-      { title: props.title, content: props.editor.getHTML() }
+      "/document/" + documentId,
+      { title: props.title, content: content }
     );
+    
     if (response.code == 200) {
+      // 创建历史版本
+      try {
+        await request.post(`/document/${documentId}/versions`, {
+          content: content,
+          summary: `保存于 ${new Date().toLocaleString()}`
+        });
+      } catch (versionError) {
+        console.warn('创建历史版本失败:', versionError);
+        // 不影响保存操作，只是记录警告
+      }
+      
       ElMessage.success("保存成功！");
       reload();
     } else {

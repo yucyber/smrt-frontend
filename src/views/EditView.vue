@@ -94,6 +94,14 @@
         <i class="ri-chat-1-line"></i>
         评论 ({{ comments.length }})
       </el-button>
+
+      <!-- 文档历史版本组件 -->
+      <DocumentHistory
+        ref="documentHistoryRef"
+        :editor="editor"
+        :document-id="router.currentRoute.value.params.id"
+        @version-restored="handleVersionRestored"
+      />
     </el-main>
   </el-container>
 </template>
@@ -145,8 +153,10 @@ import slash from "../utils/slash.js";
 import suggestion from "../utils/suggestion.js";
 import { Comment } from "../utils/CommentExtension.js";
 import CommentList from "../components/CommentList.vue";
+import DocumentHistory from "../components/DocumentHistory.vue";
 import "highlight.js/styles/github.css"; // 添加这一行
 import { common } from "lowlight";
+import History from "@tiptap/extension-history";
 const lowlight = createLowlight(common);
 // lowlight.register({ html, css, js, ts, python, java });
 lowlight.register(common);
@@ -160,6 +170,12 @@ const userStore = useUserStore();
 const comments = ref([]);
 const showCommentList = ref(false);
 const commentListPosition = ref({ x: 0, y: 0 });
+
+// 文档历史版本相关
+const documentHistoryRef = ref(null);
+const autoSaveTimer = ref(null);
+const lastSavedContent = ref("");
+const AUTO_SAVE_INTERVAL = 5 * 60 * 1000; // 5分钟自动保存
 // 生成用户颜色的函数
 const generateUserColor = (username) => {
   if (!username) return "#f783ac";
@@ -274,6 +290,12 @@ const editor = useEditor({
     // 添加评论扩展
     Comment,
 
+    // 添加历史记录扩展
+    History.configure({
+      depth: 100, // 历史记录的深度，默认为100
+      newGroupDelay: 500, // 新历史记录组的延迟时间，默认为500ms
+    }),
+
     // ... 其他扩展
   ],
 });
@@ -383,6 +405,10 @@ const loadDocuments = async () => {
     response = await request.get("/document/" + currentDocId);
     if (response.code == 200) {
       editor.value.commands.setContent(response.document.content);
+
+      // 初始化lastSavedContent
+      lastSavedContent.value = response.document.content;
+
       if (response.document.user_id == 1) {
         editor.value.setEditable(false);
         //禁用编辑按钮
@@ -597,13 +623,69 @@ const toggleCommentList = () => {
   showCommentList.value = !showCommentList.value;
 };
 
+// 处理版本恢复
+const handleVersionRestored = (version) => {
+  console.log("版本已恢复:", version);
+  // 重新加载文档数据
+  loadDocuments();
+};
+
+// 自动保存版本
+const autoSaveVersion = async () => {
+  if (!editor.value) return;
+
+  const currentContent = editor.value.getHTML();
+
+  // 如果内容没有变化，不创建版本
+  if (currentContent === lastSavedContent.value) {
+    return;
+  }
+
+  try {
+    const documentId = router.currentRoute.value.params.id;
+
+    // 跳过新文档（ID以new-doc-开头）
+    if (documentId.toString().startsWith("new-doc-")) {
+      return;
+    }
+
+    // 创建自动保存版本
+    if (documentHistoryRef.value) {
+      const success = await documentHistoryRef.value.createVersion("自动保存");
+      if (success) {
+        lastSavedContent.value = currentContent;
+        console.log("自动保存版本创建成功");
+      }
+    }
+  } catch (error) {
+    console.warn("自动保存版本失败:", error);
+  }
+};
+
+// 启动自动保存
+const startAutoSave = () => {
+  if (autoSaveTimer.value) {
+    clearInterval(autoSaveTimer.value);
+  }
+
+  autoSaveTimer.value = setInterval(autoSaveVersion, AUTO_SAVE_INTERVAL);
+};
+
+// 停止自动保存
+const stopAutoSave = () => {
+  if (autoSaveTimer.value) {
+    clearInterval(autoSaveTimer.value);
+    autoSaveTimer.value = null;
+  }
+};
+
 // 监听评论点击事件
 const handleCommentClick = (event) => {
   const { comment } = event.detail;
   if (comment) {
     // 显示评论列表
     showCommentList.value = true;
-    
+
     // 高亮显示被点击的评论文本
     if (editor.value) {
       const { from, to } = comment.range;
@@ -629,15 +711,17 @@ const handleCommentClick = (event) => {
         }
       }, 1500);
     }
-    
+
     // 高亮显示评论列表中的对应评论
     setTimeout(() => {
-      const commentListItem = document.querySelector(`.comment-item[data-comment-id="${comment.id}"]`);
+      const commentListItem = document.querySelector(
+        `.comment-item[data-comment-id="${comment.id}"]`
+      );
       if (commentListItem) {
-        commentListItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        commentListItem.classList.add('highlight-comment');
+        commentListItem.scrollIntoView({ behavior: "smooth", block: "center" });
+        commentListItem.classList.add("highlight-comment");
         setTimeout(() => {
-          commentListItem.classList.remove('highlight-comment');
+          commentListItem.classList.remove("highlight-comment");
         }, 1500);
       }
     }, 100);
@@ -669,20 +753,26 @@ watch(
 // 添加评论点击事件监听
 onMounted(() => {
   // 监听评论点击事件
-  const editorContent = document.getElementById('editor-content');
+  const editorContent = document.getElementById("editor-content");
   if (editorContent) {
-    editorContent.addEventListener('comment-clicked', handleCommentClick);
+    editorContent.addEventListener("comment-clicked", handleCommentClick);
   }
+
+  // 启动自动保存
+  startAutoSave();
 });
 
 // 销毁编辑器和移除事件监听
 onBeforeUnmount(() => {
   // 移除评论点击事件监听
-  const editorContent = document.getElementById('editor-content');
+  const editorContent = document.getElementById("editor-content");
   if (editorContent) {
-    editorContent.removeEventListener('comment-clicked', handleCommentClick);
+    editorContent.removeEventListener("comment-clicked", handleCommentClick);
   }
-  
+
+  // 停止自动保存
+  stopAutoSave();
+
   // 销毁编辑器
   editor.value?.destroy();
 });
