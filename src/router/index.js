@@ -26,6 +26,9 @@ const router = createRouter({
       name: "edit",
       component: EditView,
       meta: { requiresAuth: true },
+      props: (route) => ({
+        shareId: route.query.share
+      }),
     },
     {
       path: "/dashboard",
@@ -83,8 +86,11 @@ router.beforeEach((to, from, next) => {
     return;
   }
 
+  // 检查是否是分享链接访问
+  const isSharedDocument = to.name === 'edit' && to.query.share;
+  
   // 对需要认证的页面进行检查
-  if (to.meta.requiresAuth) {
+  if (to.meta.requiresAuth && !isSharedDocument) {
     const token = localStorage.getItem('token');
 
     if (token || devMode) {
@@ -114,6 +120,10 @@ router.beforeEach((to, from, next) => {
       });
     }
   } else {
+    // 如果是分享链接或不需要认证的页面，直接通过
+    if (isSharedDocument) {
+      console.log('分享链接访问，允许无需登录访问:', to.path);
+    }
     next();
   }
 });

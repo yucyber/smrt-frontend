@@ -117,6 +117,14 @@ import request from "../utils/request.js";
 import router from "../router";
 import { useRoute } from "vue-router";
 import { useUserStore } from "../stores/userStore.js";
+
+// 接收分享ID属性
+const props = defineProps({
+  shareId: {
+    type: String,
+    default: "",
+  },
+});
 import NProgress from "nprogress";
 import "nprogress/nprogress.css";
 import { useEditor, EditorContent, VueNodeViewRenderer } from "@tiptap/vue-3";
@@ -156,7 +164,7 @@ import CommentList from "../components/CommentList.vue";
 import DocumentHistory from "../components/DocumentHistory.vue";
 import "highlight.js/styles/github.css"; // 添加这一行
 import { common } from "lowlight";
-import History from "@tiptap/extension-history";
+// 移除History扩展的导入，因为它与Collaboration扩展不兼容
 const lowlight = createLowlight(common);
 // lowlight.register({ html, css, js, ts, python, java });
 lowlight.register(common);
@@ -290,11 +298,8 @@ const editor = useEditor({
     // 添加评论扩展
     Comment,
 
-    // 添加历史记录扩展
-    History.configure({
-      depth: 100, // 历史记录的深度，默认为100
-      newGroupDelay: 500, // 新历史记录组的延迟时间，默认为500ms
-    }),
+    // 注意：不要同时使用History和Collaboration扩展，因为它们不兼容
+    // Collaboration扩展已经包含了自己的历史记录功能
 
     // ... 其他扩展
   ],
@@ -367,13 +372,24 @@ const loadDocuments = async () => {
     // 检查是否是新创建的文档（ID以new-doc-开头）
     const isNewDoc = currentDocId.toString().startsWith("new-doc-");
 
-    // 加载用户文档列表
-    let response = await request.get("/document/user");
-    if (response.code == 200) {
-      documents.value = response.documents || [];
-    } else {
-      console.warn("获取文档列表失败:", response?.message);
-      documents.value = [];
+    // 检查是否是通过分享链接访问
+    const shareId = props.shareId || router.currentRoute.value.query.share;
+    const isSharedDoc = !!shareId;
+
+    // 如果不是分享链接访问，加载用户文档列表
+    if (!isSharedDoc) {
+      try {
+        let response = await request.get("/document/user");
+        if (response.code == 200) {
+          documents.value = response.documents || [];
+        } else {
+          console.warn("获取文档列表失败:", response?.message);
+          documents.value = [];
+        }
+      } catch (error) {
+        console.warn("获取文档列表错误:", error);
+        documents.value = [];
+      }
     }
 
     // 处理新创建的文档
@@ -401,15 +417,30 @@ const loadDocuments = async () => {
       return;
     }
 
-    // 加载现有文档内容
-    response = await request.get("/document/" + currentDocId);
+    // 加载文档内容（区分普通访问和分享链接访问）
+    let response;
+    if (isSharedDoc && shareId) {
+      // 通过分享链接访问
+      console.log("通过分享链接访问文档，分享ID:", shareId);
+      response = await request.get(`/document/share/${shareId}`);
+    } else {
+      // 普通访问
+      response = await request.get("/document/" + currentDocId);
+    }
+
     if (response.code == 200) {
       editor.value.commands.setContent(response.document.content);
 
       // 初始化lastSavedContent
       lastSavedContent.value = response.document.content;
 
-      if (response.document.user_id == 1) {
+      // 判断是否为模板文档（只读）
+      const isTemplateDoc = response.document.user_id == 1;
+      // 判断是否为分享文档（可编辑）
+      const isSharedDocument = !!isSharedDoc;
+
+      // 设置编辑权限
+      if (isTemplateDoc) {
         editor.value.setEditable(false);
         //禁用编辑按钮
         document.querySelectorAll("button").forEach((item) => {
@@ -418,8 +449,27 @@ const loadDocuments = async () => {
           }
         });
         ElMessage.info("只读模式");
+      } else {
+        // 分享文档或自己的文档都可以编辑
+        editor.value.setEditable(true);
       }
+
       title.value = response.document.title;
+
+      // 如果是分享文档，将其添加到文档列表中以便在左侧显示
+      if (
+        isSharedDoc &&
+        documents.value.findIndex((doc) => doc.id == response.document.id) ===
+          -1
+      ) {
+        documents.value.unshift({
+          id: response.document.id,
+          title: response.document.title,
+          content: response.document.content,
+          created_at: response.document.created_at,
+          updated_at: response.document.updated_at,
+        });
+      }
 
       // 加载文档评论
       try {

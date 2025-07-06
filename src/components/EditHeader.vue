@@ -36,6 +36,13 @@
       />
     </div>
     <div class="right-group">
+      <!-- 分享按钮 -->
+      <el-tooltip content="分享文档" :hide-after="0">
+        <el-button @click="shareDocument()" class="icon exclude">
+          <i style="font-size: 22px" class="ri-share-line"></i>
+        </el-button>
+      </el-tooltip>
+
       <!-- 协同编辑用户头像 -->
       <div class="collaboration-users">
         <el-tooltip
@@ -63,7 +70,7 @@
 
 <script setup>
 import { ref, watch, onMounted, onBeforeUnmount } from "vue";
-import { ElMessage, ElLoading } from "element-plus";
+import { ElMessage, ElLoading, ElMessageBox } from "element-plus";
 import { User } from "@element-plus/icons-vue";
 import request from "../utils/request.js";
 import router from "../router/index.js";
@@ -226,25 +233,25 @@ const save = async () => {
   try {
     const documentId = router.currentRoute.value.params.id;
     const content = props.editor.getHTML();
-    
+
     // 保存文档
-    const response = await request.put(
-      "/document/" + documentId,
-      { title: props.title, content: content }
-    );
-    
+    const response = await request.put("/document/" + documentId, {
+      title: props.title,
+      content: content,
+    });
+
     if (response.code == 200) {
       // 创建历史版本
       try {
         await request.post(`/document/${documentId}/versions`, {
           content: content,
-          summary: `保存于 ${new Date().toLocaleString()}`
+          summary: `保存于 ${new Date().toLocaleString()}`,
         });
       } catch (versionError) {
-        console.warn('创建历史版本失败:', versionError);
+        console.warn("创建历史版本失败:", versionError);
         // 不影响保存操作，只是记录警告
       }
-      
+
       ElMessage.success("保存成功！");
       reload();
     } else {
@@ -268,6 +275,66 @@ const download = (fileName) => {
   // 恢复原来的样式
   element.style.overflowY = "auto";
   element.style.height = "100%";
+};
+
+// 分享文档
+const shareDocument = async () => {
+  const documentId = router.currentRoute.value.params.id;
+
+  // 检查是否是新文档（未保存）
+  if (documentId.toString().startsWith("new-doc-")) {
+    ElMessage.warning("请先保存文档后再分享");
+    return;
+  }
+
+  const loadingInstance = ElLoading.service({
+    fullscreen: true,
+    text: "正在生成分享链接...",
+  });
+
+  try {
+    const response = await request.post(`/document/${documentId}/share`);
+
+    if (response.code == 200) {
+      // 从响应中获取分享ID
+      const shareId = response.share?.id;
+
+      if (!shareId) {
+        console.error("分享ID不存在:", response);
+        ElMessage.error("生成分享链接失败: 无法获取分享ID");
+        return;
+      }
+
+      // 构建完整的分享链接
+      const shareLink = `${window.location.origin}/edit/${documentId}?share=${shareId}`;
+
+      // 复制到剪贴板
+      await navigator.clipboard.writeText(shareLink);
+
+      ElMessage.success({
+        message: "分享链接已复制到剪贴板！",
+        duration: 5000,
+      });
+
+      // 显示分享链接对话框
+      ElMessageBox.alert(
+        `<div style="word-break: break-all;">${shareLink}</div>`,
+        "分享链接",
+        {
+          confirmButtonText: "确定",
+          dangerouslyUseHTMLString: true,
+          callback: () => {},
+        }
+      );
+    } else {
+      ElMessage.error(response.message || "生成分享链接失败");
+    }
+  } catch (error) {
+    console.error("分享文档错误:", error);
+    ElMessage.error(error.message || "分享文档时发生错误");
+  } finally {
+    loadingInstance.close();
+  }
 };
 </script>
 
