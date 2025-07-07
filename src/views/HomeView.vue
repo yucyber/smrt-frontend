@@ -2,48 +2,79 @@
   <div class="container">
     <div class="header">
       <div class="logo">
-        <img style="height: 6vh;" alt="logo" src="../assets/images/white_bg_logo.png" />
-        <span href="#" class="name">妙笔 · 智能编辑器</span>
+        <img
+          style="height: 6vh"
+          alt="logo"
+          src="../assets/images/white_bg_logo.png"
+        />
+        <span href="#" class="name">妙笔 · 富文本知识库</span>
       </div>
       <ul class="links">
-        <li style="color: #6c63ff;cursor: pointer;">首页</li>
-        <li><a href="https://aistudio.baidu.com/competition/detail/1182/0/introduction" target="_blank">飞浆AI Studio</a>
+        <!-- <li style="color: #6c63ff; cursor: pointer">首页</li>
+        <li>
+          <a
+            href="https://aistudio.baidu.com/competition/detail/1182/0/introduction"
+            target="_blank"
+            >飞浆AI Studio</a
+          >
         </li>
-        <li><a href="https://www.cnsoftbei.com/content-3-1018-1.html" target="_blank">中国软件杯</a></li>
-        <li><a href="https://github.com/electronic-pig/SmartEditor" target="_blank">Github</a></li>
+        <li>
+          <a
+            href="https://www.cnsoftbei.com/content-3-1018-1.html"
+            target="_blank"
+            >中国软件杯</a
+          >
+        </li>
+        <li>
+          <a
+            href="https://github.com/electronic-pig/SmartEditor"
+            target="_blank"
+            >Github</a
+          >
+        </li> -->
         <router-link to="/login" class="toLogin">登录/注册</router-link>
       </ul>
     </div>
-    <el-divider style="margin: 0;"></el-divider>
+    <el-divider style="margin: 0"></el-divider>
     <div class="content">
       <div class="info">
         <span class="clip">妙笔</span>
-        <h1>一个基于大小模型的</h1>
-        <h1>在线文档富文本编辑器</h1>
+        <h1>一个支持在线协同</h1>
+        <h1>的富文本知识库系统</h1>
         <p>在线编辑、AI辅助、文档管理</p>
         <button @click="start()">开始试用</button>
       </div>
       <div class="image">
         <div class="img-bg"></div>
-        <img style="height: 30vh;" alt="logo" src="../assets/images/round_logo.png" />
+        <img
+          style="height: 30vh"
+          alt="logo"
+          src="../assets/images/round_logo.png"
+        />
       </div>
     </div>
     <div class="features">
       <div class="feat">
-        <h3>智能润色</h3>
-        <p>基于大语言模型，实现根据上下文，实现如摘要、修饰、续写、病句改写、翻译等等常见写作辅助功能。</p>
+        <h3>知识库和文档管理</h3>
+        <p>
+          知识库首页支持查看目录树、最近访问列表及新建文档入口，实现知识库的增删改查以及文档的管理、搜索功能。
+        </p>
       </div>
       <div class="feat">
-        <h3>多媒体信息提取</h3>
-        <p>基于OCR、目标检测和语音识别等多模态感知技术，实现对图像、语音甚至视频等多媒体信息的在线信息提取。</p>
+        <h3>富文本能力</h3>
+        <p>
+          基于TIPTAP、ChatGLM大模型等技术，实现文档富文本编辑能力，支持代码块、浮动工具栏、文档大纲跳转等功能，同时提供AI文档摘要能力。
+        </p>
       </div>
       <div class="feat">
-        <h3>智能格式排版</h3>
-        <p>根据内容类型识别，自动进行格式排版，如自动调整字体、字号、行间距等，同时提供多种排版模板供用户选择。</p>
+        <h3>多人在线协同</h3>
+        <p>
+          根通过分享链接，支持多人在线协同编辑文档能力，并且实现文档历史版本管理功能以及文档划词评论功能。
+        </p>
       </div>
     </div>
     <div class="footer">
-      <p style="font-size: 2vh;">Copyright © 2024 妙笔.</p>
+      <p style="font-size: 2vh">代码小纵队</p>
     </div>
   </div>
 </template>
@@ -74,7 +105,7 @@ const start = () => {
   margin-left: 1vw;
   font-size: 3vh;
   color: #555;
-  font-weight: bold
+  font-weight: bold;
 }
 
 .links {
